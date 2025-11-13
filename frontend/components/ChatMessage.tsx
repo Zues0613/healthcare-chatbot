@@ -15,6 +15,11 @@ interface CodeBlockProps {
   children?: React.ReactNode;
 }
 
+interface MarkdownCodeProps extends React.HTMLAttributes<HTMLElement> {
+  inline?: boolean;
+  node?: unknown;
+}
+
 const CodeBlock = ({ className, children }: CodeBlockProps) => {
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<number | null>(null);
@@ -177,7 +182,7 @@ function ChatMessage({ message, index }: ChatMessageProps) {
         {children}
       </blockquote>
     ),
-    code: ({ children, className, inline, ...props }) => {
+    code: ({ children, className, inline, ...props }: MarkdownCodeProps) => {
       if (inline) {
         return (
           <code
