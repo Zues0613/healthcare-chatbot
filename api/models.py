@@ -14,21 +14,45 @@ class Profile(BaseModel):
     @field_validator("age")
     @classmethod
     def validate_age(cls, value: Optional[int]):
+        """Validate age input"""
         if value is None:
             return value
-        if value < 0:
-            raise ValueError("Age cannot be negative")
-        if value > 130:
-            raise ValueError("Age must be realistic (≤130)")
-        return value
+        
+        # Import validation function
+        from .auth.validation import validate_integer
+        
+        try:
+            return validate_integer(value, min_value=0, max_value=130)
+        except ValueError as e:
+            raise ValueError(f"Invalid age: {str(e)}")
 
     @field_validator("city")
     @classmethod
     def normalize_city(cls, value: Optional[str]):
+        """Validate and sanitize city input"""
         if value is None:
             return value
-        normalized = value.strip()
-        return normalized or None
+        
+        # Import validation function
+        from .auth.validation import sanitize_string
+        
+        try:
+            normalized = sanitize_string(value.strip(), max_length=100)
+            return normalized if normalized else None
+        except ValueError as e:
+            raise ValueError(f"Invalid city: {str(e)}")
+    
+    @field_validator("sex")
+    @classmethod
+    def validate_sex(cls, value: Optional[str]):
+        """Validate sex input"""
+        if value is None:
+            return value
+        
+        if value not in ["male", "female", "other"]:
+            raise ValueError("Sex must be one of: male, female, other")
+        
+        return value
 
 
 class ChatRequest(BaseModel):
@@ -36,13 +60,39 @@ class ChatRequest(BaseModel):
     lang: Literal["en", "hi", "ta", "te", "kn", "ml"] = "en"
     profile: Profile
     debug: bool = False
+    customer_id: Optional[str] = None
+    session_id: Optional[str] = None
 
     @field_validator("text")
     @classmethod
     def text_not_blank(cls, value: str) -> str:
+        """Validate and sanitize chat text input"""
         if not value or not value.strip():
             raise ValueError("Query text must not be empty")
-        return value.strip()
+        
+        # Import validation function
+        from .auth.validation import validate_chat_input
+        
+        # Validate input to prevent SQL injection and XSS
+        try:
+            return validate_chat_input(value.strip())
+        except ValueError as e:
+            raise ValueError(f"Invalid input: {str(e)}")
+    
+    @field_validator("customer_id", "session_id")
+    @classmethod
+    def validate_ids(cls, value: Optional[str]) -> Optional[str]:
+        """Validate ID fields"""
+        if value is None:
+            return value
+        
+        # Validate UUID format (basic check)
+        import re
+        uuid_pattern = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        if not re.match(uuid_pattern, value, re.IGNORECASE):
+            raise ValueError("Invalid ID format")
+        
+        return value
 
 
 class MentalHealthSafety(BaseModel):

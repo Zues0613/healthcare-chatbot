@@ -14,7 +14,7 @@ from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from deep_translator import GoogleTranslator  # type: ignore
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, Depends
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -82,6 +82,10 @@ from .graph.cypher import (
 )
 from .graph.client import neo4j_client
 from .services.indic_translator import IndicTransService
+from .database import prisma_client, db_service
+from .auth.routes import router as auth_router
+from .auth.middleware import require_auth, require_role
+
 indic_translator = IndicTransService()
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -93,16 +97,34 @@ logger = logging.getLogger("health_assistant")
 
 app = FastAPI(title="Health Assistant API")
 
+# Include auth routes
+app.include_router(auth_router)
+
+
+@app.on_event("startup")
+async def _startup() -> None:
+    """Initialize database on startup"""
+    try:
+        connected = await prisma_client.connect()
+        if connected:
+            logger.info("Database initialized successfully with Prisma")
+        else:
+            logger.warning("Database not connected - chat history will not be saved")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+        logger.warning("Database not connected - chat history will not be saved")
+
 
 @app.on_event("shutdown")
 async def _shutdown() -> None:
     if neo4j_client.driver:
         neo4j_client.close()
+    await prisma_client.disconnect()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
-    allow_credentials=True,
+    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001").split(","),
+    allow_credentials=True,  # Required for HTTP-only cookies
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -1076,18 +1098,26 @@ async def health_check():
         "ok": True,
         "openai_configured": get_openai_client() is not None,
         "openrouter_configured": get_openrouter_client() is not None,
-        "services": {
+            "services": {
             "rag": True,
             "graph": ensure_neo4j(),
             "graph_fallback": True,
-            "safety": True
+            "safety": True,
+            "database": prisma_client.is_connected()
         }
     }
 
 
 @app.post("/stt")
-async def speech_to_text(file: UploadFile = File(...), lang: Optional[str] = None):
-    """Convert speech to text using OpenAI Whisper"""
+async def speech_to_text(
+    file: UploadFile = File(...),
+    lang: Optional[str] = None,
+    user: dict = Depends(require_auth)
+):
+    """
+    Convert speech to text using OpenAI Whisper
+    Requires authentication
+    """
     if file.content_type and not file.content_type.startswith("audio"):
         raise HTTPException(status_code=400, detail="Unsupported media type. Please upload an audio file.")
     
@@ -1503,19 +1533,100 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(
+    request: ChatRequest,
+    user: dict = Depends(require_auth)
+):
     """
     Main chat endpoint with routing, safety detection, and RAG
+    Saves customer data and chat messages to database
+    Requires authentication
     """
     logger.info(
         "Received chat request",
         extra={
             "lang": request.lang,
             "profile": request.profile.model_dump(exclude_none=True),
+            "customer_id": request.customer_id,
+            "session_id": request.session_id,
+            "user_id": user.get("user_id"),
         },
     )
     try:
+        # Use authenticated user's ID
+        customer_id = user.get("user_id") or request.customer_id
+        session_id = request.session_id
+        
+        if prisma_client.is_connected():
+            try:
+                # Update authenticated user's profile if needed
+                profile_data = request.profile.model_dump(exclude_none=True)
+                
+                # Get customer (should exist since user is authenticated)
+                customer = await db_service.get_customer(customer_id)
+                
+                if not customer:
+                    logger.error(f"Customer not found: {customer_id}")
+                    raise HTTPException(status_code=404, detail="Customer not found")
+                
+                # Update profile if data provided
+                if profile_data:
+                    customer = await db_service.update_customer_profile(customer_id, profile_data)
+                
+                customer_id = customer.id
+                
+                # Get or create session
+                chat_session = await db_service.get_or_create_session(
+                    customer_id=customer_id,
+                    language=request.lang,
+                    session_id=session_id
+                )
+                
+                if chat_session:
+                    session_id = chat_session.id
+                    
+                    # Save user message
+                    await db_service.save_chat_message(
+                        session_id=session_id,
+                        role="user",
+                        message_text=request.text,
+                        language=request.lang,
+                    )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning(f"Failed to save customer/session data: {e}", exc_info=True)
+        
+        # Process chat request
         response, target_lang, timings = process_chat_request(request)
+        
+        # Save assistant response to database
+        if prisma_client.is_connected() and session_id:
+            try:
+                # Convert safety to dict
+                safety_dict = response.safety.model_dump() if hasattr(response.safety, 'model_dump') else dict(response.safety)
+                
+                await db_service.save_chat_message(
+                    session_id=session_id,
+                    role="assistant",
+                    message_text=request.text,  # User's original question
+                    language=target_lang,
+                    answer=response.answer,
+                    route=response.route,
+                    safety_data=safety_dict,
+                    facts=response.facts,
+                    citations=response.citations,
+                    metadata=response.metadata,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to save chat message: {e}", exc_info=True)
+        
+        # Add customer_id and session_id to response metadata
+        if customer_id:
+            response.metadata["customer_id"] = customer_id
+        if session_id:
+            response.metadata["session_id"] = session_id
+        
         logger.info(
             "Chat response ready",
             extra={
@@ -1524,17 +1635,19 @@ async def chat(request: ChatRequest):
                 "target_lang": target_lang,
                 "facts": len(response.facts),
                 "timings": timings,
+                "customer_id": customer_id,
+                "session_id": session_id,
             },
         )
         return response
     except HTTPException:
         raise
-    except Exception as exc:
+    except Exception as e:
         logger.exception("Chat processing failed")
         raise HTTPException(
             status_code=500,
             detail="Unable to process your request right now. Please try again in a moment.",
-        ) from exc
+        ) from e
 
 
 @app.post("/voice-chat", response_model=VoiceChatResponse)
@@ -1542,9 +1655,14 @@ async def voice_chat(
     audio: UploadFile = File(...),
     lang: Optional[str] = Form(None),
     profile: Optional[str] = Form(None),
+    customer_id: Optional[str] = Form(None),
+    session_id: Optional[str] = Form(None),
+    user: dict = Depends(require_auth),
 ):
     """
     Voice-first endpoint: audio -> Whisper STT -> chat -> TTS audio response
+    Saves customer data and chat messages to database (through ChatRequest)
+    Requires authentication
     """
     if audio.content_type and not audio.content_type.startswith("audio"):
         raise HTTPException(status_code=400, detail="Unsupported media type. Please upload an audio file.")
@@ -1562,13 +1680,77 @@ async def voice_chat(
             except json.JSONDecodeError as exc:
                 raise HTTPException(status_code=400, detail=f"Invalid profile JSON: {exc}") from exc
 
+        # Use authenticated user's ID
+        authenticated_customer_id = user.get("user_id") or customer_id
+
         chat_request = ChatRequest(
             text=transcript,
             lang=lang or DEFAULT_LANG,
             profile=Profile(**profile_payload),
+            customer_id=authenticated_customer_id,
+            session_id=session_id,
         )
 
+        # Save customer data to database (same logic as chat endpoint)
+        if prisma_client.is_connected():
+            try:
+                profile_data = chat_request.profile.model_dump(exclude_none=True)
+                
+                # Get customer (should exist since user is authenticated)
+                customer = await db_service.get_customer(authenticated_customer_id)
+                
+                if not customer:
+                    logger.error(f"Customer not found: {authenticated_customer_id}")
+                    raise HTTPException(status_code=404, detail="Customer not found")
+                
+                # Update profile if data provided
+                if profile_data:
+                    customer = await db_service.update_customer_profile(authenticated_customer_id, profile_data)
+                
+                customer_id = customer.id
+                
+                chat_session = await db_service.get_or_create_session(
+                    customer_id=customer_id,
+                    language=chat_request.lang,
+                    session_id=session_id
+                )
+                
+                if chat_session:
+                    session_id = chat_session.id
+                    
+                    # Save user message
+                    await db_service.save_chat_message(
+                        session_id=session_id,
+                        role="user",
+                        message_text=transcript,
+                        language=chat_request.lang,
+                    )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning(f"Failed to save customer/session data in voice_chat: {e}", exc_info=True)
+
         chat_response, target_lang, chat_timings = process_chat_request(chat_request)
+
+        # Save assistant response to database
+        if prisma_client.is_connected() and session_id:
+            try:
+                safety_dict = chat_response.safety.model_dump() if hasattr(chat_response.safety, 'model_dump') else dict(chat_response.safety)
+                
+                await db_service.save_chat_message(
+                    session_id=session_id,
+                    role="assistant",
+                    message_text=transcript,
+                    language=target_lang,
+                    answer=chat_response.answer,
+                    route=chat_response.route,
+                    safety_data=safety_dict,
+                    facts=chat_response.facts,
+                    citations=chat_response.citations,
+                    metadata=chat_response.metadata,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to save chat message in voice_chat: {e}", exc_info=True)
 
         tts_start = time.perf_counter()
         audio_bytes_out, tts_provider, audio_mime = synthesize_speech(chat_response.answer, target_lang)
@@ -1586,6 +1768,12 @@ async def voice_chat(
             "audio_input_bytes": len(audio_bytes),
             "audio_output_bytes": len(audio_bytes_out),
         }
+        
+        # Add customer_id and session_id to metadata
+        if customer_id:
+            metadata["customer_id"] = customer_id
+        if session_id:
+            metadata["session_id"] = session_id
 
         return VoiceChatResponse(
             transcript=transcript,
@@ -1605,6 +1793,234 @@ async def voice_chat(
             status_code=500,
             detail="Voice processing failed. Please try again later.",
         ) from exc
+
+
+@app.get("/customer/{customer_id}")
+async def get_customer(
+    customer_id: str,
+    user: dict = Depends(require_auth)
+):
+    """
+    Get customer information
+    Requires authentication
+    Users can only view their own profile, admins can view any profile
+    """
+    # Validate path parameter to prevent SQL injection
+    from .auth.validation import validate_uuid
+    try:
+        customer_id = validate_uuid(customer_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    if not prisma_client.is_connected():
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    # Check if user is accessing their own profile or is admin
+    user_role = user.get("role", "user")
+    user_id = user.get("user_id")
+    
+    if user_role != "admin" and user_id != customer_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only view your own profile"
+        )
+    
+    customer = await db_service.get_customer(customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    
+    return {
+        "id": customer.id,
+        "email": customer.email,
+        "createdAt": customer.createdAt.isoformat() if customer.createdAt else None,
+        "updatedAt": customer.updatedAt.isoformat() if customer.updatedAt else None,
+        "age": customer.age,
+        "sex": customer.sex,
+        "diabetes": customer.diabetes,
+        "hypertension": customer.hypertension,
+        "pregnancy": customer.pregnancy,
+        "city": customer.city,
+        "metadata": customer.metadata,
+        "sessionCount": len(customer.chatSessions) if customer.chatSessions else 0,
+    }
+
+
+@app.get("/customer/{customer_id}/sessions")
+async def get_customer_sessions(
+    customer_id: str,
+    limit: int = 50,
+    user: dict = Depends(require_auth)
+):
+    """
+    Get chat sessions for a customer
+    Requires authentication
+    Users can only view their own sessions, admins can view any sessions
+    """
+    # Validate path parameter to prevent SQL injection
+    from .auth.validation import validate_uuid, validate_query_limit
+    try:
+        customer_id = validate_uuid(customer_id)
+        limit = validate_query_limit(limit, max_limit=100, min_limit=1)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    if not prisma_client.is_connected():
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    # Check if user is accessing their own sessions or is admin
+    user_role = user.get("role", "user")
+    user_id = user.get("user_id")
+    
+    if user_role != "admin" and user_id != customer_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only view your own sessions"
+        )
+    
+    sessions = await db_service.get_customer_sessions(customer_id, limit=limit)
+    return [
+        {
+            "id": session.id,
+            "customerId": session.customerId,
+            "createdAt": session.createdAt.isoformat() if session.createdAt else None,
+            "updatedAt": session.updatedAt.isoformat() if session.updatedAt else None,
+            "language": session.language,
+            "sessionMetadata": session.sessionMetadata,
+            "messageCount": len(session.messages) if session.messages else 0,
+        }
+        for session in sessions
+    ]
+
+
+@app.get("/session/{session_id}/messages")
+async def get_session_messages(
+    session_id: str,
+    limit: int = 100,
+    user: dict = Depends(require_auth)
+):
+    """
+    Get messages for a session
+    Requires authentication
+    Users can only view messages from their own sessions, admins can view any messages
+    """
+    # Validate path parameter to prevent SQL injection
+    from .auth.validation import validate_uuid, validate_query_limit
+    try:
+        session_id = validate_uuid(session_id)
+        limit = validate_query_limit(limit, max_limit=200, min_limit=1)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    if not prisma_client.is_connected():
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    # Verify session belongs to user (unless admin)
+    user_role = user.get("role", "user")
+    user_id = user.get("user_id")
+    
+    if user_role != "admin":
+        # Get session to verify ownership
+        session = await db_service.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        if session.customerId != user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only view messages from your own sessions"
+            )
+    
+    messages = await db_service.get_session_messages(session_id, limit=limit)
+    return [
+        {
+            "id": message.id,
+            "sessionId": message.sessionId,
+            "createdAt": message.createdAt.isoformat() if message.createdAt else None,
+            "role": message.role,
+            "messageText": message.messageText,
+            "language": message.language,
+            "route": message.route,
+            "answer": message.answer,
+            "safetyData": message.safetyData,
+            "facts": message.facts,
+            "citations": message.citations,
+            "metadata": message.metadata,
+        }
+        for message in messages
+    ]
+
+
+@app.get("/session/{session_id}")
+async def get_session(
+    session_id: str,
+    user: dict = Depends(require_auth)
+):
+    """
+    Get session information with messages
+    Requires authentication
+    Users can only view their own sessions, admins can view any session
+    """
+    # Validate path parameter to prevent SQL injection
+    from .auth.validation import validate_uuid
+    try:
+        session_id = validate_uuid(session_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    if not prisma_client.is_connected():
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        chat_session = await db_service.get_session(session_id)
+        if not chat_session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Verify session belongs to user (unless admin)
+        user_role = user.get("role", "user")
+        user_id = user.get("user_id")
+        
+        if user_role != "admin" and chat_session.customerId != user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only view your own sessions"
+            )
+        
+        return {
+            "id": chat_session.id,
+            "customerId": chat_session.customerId,
+            "createdAt": chat_session.createdAt.isoformat() if chat_session.createdAt else None,
+            "updatedAt": chat_session.updatedAt.isoformat() if chat_session.updatedAt else None,
+            "language": chat_session.language,
+            "sessionMetadata": chat_session.sessionMetadata,
+            "customer": {
+                "id": chat_session.customer.id,
+                "email": chat_session.customer.email,
+                "age": chat_session.customer.age,
+                "sex": chat_session.customer.sex,
+                "city": chat_session.customer.city,
+            } if hasattr(chat_session, 'customer') and chat_session.customer else None,
+            "messages": [
+                {
+                    "id": message.id,
+                    "createdAt": message.createdAt.isoformat() if message.createdAt else None,
+                    "role": message.role,
+                    "messageText": message.messageText,
+                    "language": message.language,
+                    "route": message.route,
+                    "answer": message.answer,
+                    "safetyData": message.safetyData,
+                    "facts": message.facts,
+                    "citations": message.citations,
+                    "metadata": message.metadata,
+                }
+                for message in chat_session.messages
+            ],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving session: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve session") from e
 
 
 if __name__ == "__main__":
