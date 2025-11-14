@@ -480,7 +480,7 @@ export default function LandingPage() {
               How every answer takes shape.
             </h2>
             <p className="mt-3 max-w-3xl text-sm leading-relaxed text-slate-200/80">
-              A transparent pipeline keeps humans in the loop while preserving speed and empathy. Peek under the hood.
+              A transparent, multilingual pipeline keeps humans in the loop while preserving speed and empathy. Every query is automatically detected, translated, processed, and localized—peek under the hood.
             </p>
             <style dangerouslySetInnerHTML={{__html: `
               @keyframes bounce-in {
@@ -544,65 +544,81 @@ export default function LandingPage() {
               .icon-glow { animation: icon-glow 2s ease-in-out infinite; }
               .card-pulse { animation: card-pulse 4s ease-in-out infinite; }
               .delay-0 { animation-delay: 0s; }
-              .delay-1 { animation-delay: 0.5s; }
-              .delay-2 { animation-delay: 1s; }
-              .delay-3 { animation-delay: 1.5s; }
-              .delay-4 { animation-delay: 2s; }
+              .delay-1 { animation-delay: 0.4s; }
+              .delay-2 { animation-delay: 0.8s; }
+              .delay-3 { animation-delay: 1.2s; }
+              .delay-4 { animation-delay: 1.6s; }
+              .delay-5 { animation-delay: 2s; }
+              .delay-6 { animation-delay: 2.4s; }
             `}} />
             <div className="mt-8">
-              <div className="mx-auto grid grid-cols-1 gap-8 md:grid-cols-5 lg:gap-6">
+              <div className="mx-auto grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
                 {[
                   { 
                     label: "Text Input", 
-                    description: "Typed or voice captured, normalized and language-detected.",
+                    description: "Typed or voice captured, normalized and ready for processing.",
                     icon: "📥",
                     animation: "icon-bounce delay-0"
+                  },
+                  { 
+                    label: "Lang Detect & Translate", 
+                    description: "Automatic language detection and translation to English for processing.",
+                    icon: "🌐",
+                    animation: "icon-pulse delay-1"
                   },
                   { 
                     label: "ChromaDB", 
                     description: "Vector retrieval across 1,120 medical briefs and playbooks.",
                     icon: "🔍",
-                    animation: "icon-pulse delay-1"
+                    animation: "icon-pulse delay-2"
                   },
                   { 
-                    label: "Neo4j", 
+                    label: "Neo4j Fallback", 
                     description: "Graph fallback inserts contraindications, providers, and safety edges.",
                     icon: "🕸️",
-                    animation: "icon-rotate delay-2"
+                    animation: "icon-rotate delay-3"
                   },
                   { 
                     label: "OpenAI", 
                     description: "Guardrailed LLM crafts empathetic guidance with deterministic rules.",
                     icon: "🤖",
-                    animation: "icon-shake delay-3"
+                    animation: "icon-shake delay-4"
+                  },
+                  { 
+                    label: "Language Translation", 
+                    description: "Response translated back to user's preferred language with context preservation.",
+                    icon: "🔄",
+                    animation: "icon-float delay-5"
                   },
                   { 
                     label: "Response", 
                     description: "Localized output, red-flag alerts, and optional escalation hooks.",
                     icon: "💬",
-                    animation: "icon-float delay-4"
+                    animation: "icon-float delay-6"
                   },
                 ].map((stage, index, arr) => (
                   <div key={stage.label} className="relative">
                     <div className={clsx(
-                      "relative flex h-full flex-col rounded-[24px] border border-white/10 bg-gradient-to-br from-emerald-500/10 via-green-500/8 to-teal-500/10 p-6 shadow-[0_25px_60px_rgba(15,23,42,0.5)] backdrop-blur-sm transition-all hover:scale-[1.05] hover:border-emerald-400/50 hover:shadow-[0_35px_90px_rgba(16,185,129,0.35)] card-pulse",
+                      "relative flex h-full flex-col rounded-[20px] border border-white/10 bg-gradient-to-br from-emerald-500/10 via-green-500/8 to-teal-500/10 p-4 shadow-[0_20px_50px_rgba(15,23,42,0.5)] backdrop-blur-sm transition-all hover:scale-[1.05] hover:border-emerald-400/50 hover:shadow-[0_30px_80px_rgba(16,185,129,0.35)] card-pulse lg:p-5",
                       index === 0 && "delay-0",
                       index === 1 && "delay-1",
                       index === 2 && "delay-2",
                       index === 3 && "delay-3",
-                      index === 4 && "delay-4"
+                      index === 4 && "delay-4",
+                      index === 5 && "delay-5",
+                      index === 6 && "delay-6"
                     )}>
                       <div className="absolute inset-0 -z-10 rounded-[24px] bg-gradient-to-br from-emerald-500/5 via-green-500/3 to-teal-500/5 opacity-0 blur-xl transition-opacity hover:opacity-100" />
-                      <div className="mb-4 flex items-center justify-between">
-                        <span className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/20 via-green-500/15 to-teal-500/20 text-2xl shadow-inner shadow-emerald-500/10 transition-transform hover:scale-110 ${stage.animation} icon-glow`}>
+                      <div className="mb-3 flex items-center justify-between">
+                        <span className={`flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500/20 via-green-500/15 to-teal-500/20 text-xl shadow-inner shadow-emerald-500/10 transition-transform hover:scale-110 ${stage.animation} icon-glow lg:h-12 lg:w-12 lg:text-2xl`}>
                           {stage.icon}
                         </span>
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-bold text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.3)] animate-pulse">
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-bold text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.3)] animate-pulse lg:h-7 lg:w-7">
                           {index + 1}
                         </span>
                       </div>
-                      <h3 className="mb-2 text-lg font-semibold text-white transition-colors hover:text-emerald-300">{stage.label}</h3>
-                      <p className="text-sm leading-relaxed text-slate-200/80">{stage.description}</p>
+                      <h3 className="mb-2 text-base font-semibold text-white transition-colors hover:text-emerald-300 lg:text-lg">{stage.label}</h3>
+                      <p className="text-xs leading-relaxed text-slate-200/80 lg:text-sm">{stage.description}</p>
                       <div className="mt-4 h-1 w-full overflow-hidden rounded-full bg-emerald-500/10">
                         <div className={`h-full rounded-full bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 animate-pulse`} style={{ 
                           animation: `pulse 2s ease-in-out infinite`,
@@ -611,10 +627,10 @@ export default function LandingPage() {
                       </div>
                     </div>
                     {index < arr.length - 1 && (
-                      <div className="absolute -right-4 top-1/2 z-10 hidden -translate-y-1/2 md:block">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500/30 via-green-500/20 to-teal-500/30 shadow-[0_10px_30px_rgba(16,185,129,0.3)] backdrop-blur-sm">
+                      <div className="absolute -right-2 top-1/2 z-10 hidden -translate-y-1/2 xl:flex xl:-right-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500/30 via-green-500/20 to-teal-500/30 shadow-[0_8px_24px_rgba(16,185,129,0.3)] backdrop-blur-sm xl:h-10 xl:w-10">
                           <svg
-                            className="h-6 w-6 text-emerald-300 arrow-animate"
+                            className="h-4 w-4 text-emerald-300 arrow-animate xl:h-5 xl:w-5"
                             fill="none"
                             viewBox="0 0 24 24"
                             stroke="currentColor"

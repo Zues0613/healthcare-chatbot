@@ -549,41 +549,6 @@ export default function Home() {
             <ErrorCallout message={error} onDismiss={handleDismissError} />
           )}
 
-          <nav className="flex flex-col gap-3" aria-label="Quick actions">
-            <button
-            type="button"
-              onClick={() => {
-                setIsSidebarOpen(false);
-                setShowPreferences(true);
-              }}
-              className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/65 px-5 py-4 text-left shadow-[0_20px_45px_rgba(16,185,129,0.12)] transition hover:border-emerald-400/60 hover:bg-slate-900/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400/70"
-            >
-              <span className="flex items-center gap-3 text-slate-100">
-                <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.35)]">
-                  <Settings className="h-4 w-4" />
-                </span>
-                <span className="text-sm font-semibold leading-tight">Session preferences</span>
-            </span>
-              <span className="text-xs uppercase tracking-[0.32em] text-emerald-300/70">Open</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setIsSidebarOpen(false);
-                setShowSafety(true);
-              }}
-              className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/65 px-5 py-4 text-left shadow-[0_20px_45px_rgba(34,197,94,0.18)] transition hover:border-green-400/60 hover:bg-slate-900/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-400/70"
-            >
-              <span className="flex items-center gap-3 text-slate-100">
-                <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500 via-green-500 to-emerald-500 text-white shadow-[0_0_15px_rgba(20,184,166,0.35)]">
-                  <HeartPulse className="h-4 w-4" />
-                </span>
-                <span className="text-sm font-semibold leading-tight">Safety guidance</span>
-            </span>
-              <span className="text-xs uppercase tracking-[0.32em] text-green-300/70">Open</span>
-            </button>
-          </nav>
 
           <TopicSuggestions
             onSuggestionSelect={(prompt) => {
@@ -646,11 +611,29 @@ export default function Home() {
                 <div className="flex items-center gap-2 sm:gap-3">
                   <button
                     type="button"
+                    onClick={() => setShowPreferences(true)}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-100 shadow-[0_0_25px_rgba(16,185,129,0.18)] transition hover:border-emerald-400/70 hover:text-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+                    title="Session preferences"
+                  >
+                    <Settings className="h-4 w-4" aria-hidden />
+                    <span className="hidden sm:inline">Preferences</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowSafety(true)}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-100 shadow-[0_0_25px_rgba(34,197,94,0.18)] transition hover:border-green-400/70 hover:text-green-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-300"
+                    title="Safety guidance"
+                  >
+                    <HeartPulse className="h-4 w-4" aria-hidden />
+                    <span className="hidden sm:inline">Safety</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleShareConversation}
                     className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-100 shadow-[0_0_25px_rgba(16,185,129,0.18)] transition hover:border-emerald-300/70 hover:text-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
                   >
                     <Share2 className="h-4 w-4" aria-hidden />
-                    Share
+                    <span className="hidden sm:inline">Share</span>
                   </button>
                   <div className="flex items-center gap-2 rounded-full border border-emerald-400/40 bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 px-4 py-1 text-sm font-medium text-white shadow-[0_0_25px_rgba(16,185,129,0.35)]">
                     <span className="flex h-2.5 w-2.5 animate-pulse rounded-full bg-white" />
