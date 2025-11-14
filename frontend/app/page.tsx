@@ -6,10 +6,14 @@ import axios from 'axios';
 import {
   AlertTriangle,
   Check,
+  Download,
   HeartPulse,
+  History,
   Menu,
   Mic,
   Phone,
+  Plus,
+  Search,
   SendHorizonal,
   Settings,
   Share2,
@@ -116,6 +120,19 @@ interface ChatEntry extends ChatMessageModel {
   safety?: any;
 }
 
+interface ChatSession {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: ChatEntry[];
+}
+
+const HISTORY_STORAGE_KEY = 'wellness-care-sessions.v1';
+
+const cloneEntries = (entries: ChatEntry[]): ChatEntry[] =>
+  entries.map((entry) => ({ ...entry }));
+
 const defaultProfile: Profile = {
   diabetes: false,
   hypertension: false,
@@ -136,10 +153,13 @@ const formatTimestamp = () => new Date().toISOString();
 
 export default function Home() {
   const [messages, setMessages] = useState<ChatEntry[]>([]);
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [lang, setLang] = useState<LangCode>('en');
   const [showProfile, setShowProfile] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
@@ -149,6 +169,8 @@ export default function Home() {
   const [profile, setProfile] = useState<Profile>(defaultProfile);
   const [profileLoading, setProfileLoading] = useState(true);
   const [hasInteracted, setHasInteracted] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -157,6 +179,27 @@ export default function Home() {
   const shareFeedbackTimeoutRef = useRef<number | null>(null);
 
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+
+  const createSession = useCallback((): ChatSession => {
+    const timestamp = formatTimestamp();
+    return {
+      id: createId(),
+      title: 'New care session',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      messages: [],
+    };
+  }, []);
+
+  const deriveSessionTitle = useCallback((entries: ChatEntry[], fallback = 'New care session') => {
+    const firstUser =
+      entries.find((entry) => entry.role === 'user' && entry.content && entry.content.trim().length > 0) ?? null;
+    if (!firstUser) {
+      return fallback;
+    }
+    const normalized = firstUser.content.replace(/\s+/g, ' ').trim();
+    return normalized.length > 56 ? `${normalized.slice(0, 56)}…` : normalized;
+  }, []);
 
   const quickSuggestionPrompts = useMemo(() => {
     return TOPIC_CATEGORIES.flatMap((category) => category.suggestions.map((suggestion) => suggestion.prompt)).slice(0, 6);
@@ -178,6 +221,44 @@ export default function Home() {
     }
     setProfileLoading(false);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      const stored = window.localStorage.getItem(HISTORY_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as ChatSession[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const nextSessions = parsed.map((session) => ({
+            ...session,
+            messages: session.messages ? cloneEntries(session.messages) : [],
+          }));
+          setSessions(nextSessions);
+          setActiveSessionId(nextSessions[0].id);
+          setMessages(cloneEntries(nextSessions[0].messages ?? []));
+          setHasInteracted(nextSessions[0].messages?.some((entry) => entry.role === 'assistant') ?? false);
+        } else {
+          const session = createSession();
+          setSessions([session]);
+          setActiveSessionId(session.id);
+        }
+      } else {
+        const session = createSession();
+        setSessions([session]);
+        setActiveSessionId(session.id);
+      }
+    } catch (loadError) {
+      console.warn('Unable to load saved sessions', loadError);
+      const session = createSession();
+      setSessions([session]);
+      setActiveSessionId(session.id);
+    } finally {
+      setSearchQuery('');
+      setTimeout(() => setIsHydrated(true), 0);
+    }
+  }, [createSession]);
 
   useEffect(() => {
     localStorage.setItem('healthProfile', JSON.stringify(profile));
@@ -205,6 +286,48 @@ export default function Home() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!isHydrated || !activeSessionId) {
+      return;
+    }
+    setSessions((prevSessions) => {
+      const timestamp = formatTimestamp();
+      let found = false;
+      const updated = prevSessions.map((session) => {
+        if (session.id === activeSessionId) {
+          found = true;
+          return {
+            ...session,
+            title: deriveSessionTitle(messages, session.title),
+            updatedAt: timestamp,
+            messages: cloneEntries(messages),
+          };
+        }
+        return session;
+      });
+
+      if (!found) {
+        updated.push({
+          id: activeSessionId,
+          title: deriveSessionTitle(messages),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          messages: cloneEntries(messages),
+        });
+      }
+
+      updated.sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      );
+
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updated));
+      }
+
+      return updated;
+    });
+  }, [messages, activeSessionId, isHydrated, deriveSessionTitle]);
 
   const profileStats = useMemo(() => {
     const chronicConditions = [
@@ -411,6 +534,80 @@ export default function Home() {
     [handleSend]
   );
 
+  const handleNewSession = useCallback(() => {
+    const session = createSession();
+    setSessions((prev) => {
+      const next = [session, ...prev];
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(next));
+      }
+      return next;
+    });
+    setActiveSessionId(session.id);
+    setMessages([]);
+    setHasInteracted(false);
+    setError(null);
+    setSearchQuery('');
+    if (!isDesktop) {
+      setIsSidebarOpen(false);
+      setIsHistoryExpanded(false);
+    }
+  }, [createSession, isDesktop]);
+
+  const handleSelectSession = useCallback(
+    (sessionId: string) => {
+      const session = sessions.find((entry) => entry.id === sessionId);
+      if (!session) {
+        return;
+      }
+      setActiveSessionId(sessionId);
+      setMessages(cloneEntries(session.messages ?? []));
+      setHasInteracted(session.messages?.some((entry) => entry.role === 'assistant') ?? false);
+      setError(null);
+      setSearchQuery('');
+      if (!isDesktop) {
+        setIsSidebarOpen(false);
+        setIsHistoryExpanded(false);
+      }
+    },
+    [sessions, isDesktop]
+  );
+
+  const handleExportConversation = useCallback(() => {
+    if (messages.length === 0) {
+      scheduleShareFeedback('No conversation to export yet.');
+      return;
+    }
+    try {
+      const payload = {
+        sessionId: activeSessionId,
+        exportedAt: formatTimestamp(),
+        profileSnapshot: profile,
+        messages,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: 'application/json',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      anchor.href = url;
+      anchor.download = `wellness-session-${timestamp}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.URL.revokeObjectURL(url);
+      scheduleShareFeedback('Conversation exported.');
+    } catch (exportError) {
+      console.error('Export error', exportError);
+      scheduleShareFeedback('Unable to export conversation.');
+    }
+  }, [messages, activeSessionId, profile, scheduleShareFeedback]);
+
+  const toggleHistory = useCallback(() => {
+    setIsHistoryExpanded((prev) => !prev);
+  }, []);
+
   const handleShareConversation = useCallback(async () => {
     if (typeof navigator === 'undefined') {
       scheduleShareFeedback('Sharing is unavailable in this environment.');
@@ -485,6 +682,28 @@ export default function Home() {
       ),
     [isSidebarOpen]
   );
+
+  const activeSession = useMemo(
+    () => sessions.find((session) => session.id === activeSessionId) ?? null,
+    [sessions, activeSessionId]
+  );
+
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+
+  const filteredMessages = useMemo(() => {
+    if (!normalizedSearch) {
+      return messages;
+    }
+    return messages.filter((entry) => entry.content.toLowerCase().includes(normalizedSearch));
+  }, [messages, normalizedSearch]);
+
+  const highlightedIds = useMemo(() => {
+    if (!normalizedSearch) {
+      return new Set<string>();
+    }
+    return new Set(filteredMessages.map((entry) => entry.id));
+  }, [filteredMessages, normalizedSearch]);
+
 
   useEffect(() => {
     if (typeof window === 'undefined') {

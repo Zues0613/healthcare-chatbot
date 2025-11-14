@@ -121,9 +121,10 @@ const avatarLabel: Record<ChatRole, string> = {
 interface ChatMessageProps {
   message: ChatMessageModel;
   index: number;
+  isHighlighted?: boolean;
 }
 
-function ChatMessage({ message, index }: ChatMessageProps) {
+function ChatMessage({ message, index, isHighlighted = false }: ChatMessageProps) {
   const [formattedTime, setFormattedTime] = useState<string>("");
   const [copiedCitationKey, setCopiedCitationKey] = useState<string | null>(null);
   const citationCopyTimeoutRef = useRef<number | null>(null);
@@ -361,6 +362,7 @@ function ChatMessage({ message, index }: ChatMessageProps) {
       aria-live="polite"
       role="listitem"
       data-message-role={message.role}
+      data-message-id={message.id}
       data-testid={`chat-message-${index}`}
     >
       {message.role === "assistant" && (
@@ -380,7 +382,8 @@ function ChatMessage({ message, index }: ChatMessageProps) {
           roleStyles[message.role],
           message.role === "assistant"
             ? "[&::before]:pointer-events-none [&::before]:absolute [&::before]:inset-0 [&::before]:-mt-10 [&::before]:rounded-[32px] [&::before]:bg-gradient-to-br [&::before]:from-pink-500/10 [&::before]:to-transparent [&::before]:opacity-0 [&::before]:transition-opacity hover:[&::before]:opacity-100"
-            : ""
+            : "",
+          isHighlighted ? "ring-2 ring-pink-300/70 shadow-[0_0_45px_rgba(236,72,153,0.45)]" : ""
         )}
         tabIndex={0}
       >
