@@ -3,7 +3,7 @@
 import clsx from 'clsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import axios from 'axios';
+import { apiClient, API_BASE } from '../utils/api';
 import { isAuthenticated } from '../utils/auth';
 import {
   AlertTriangle,
@@ -29,8 +29,7 @@ import { CalendarDays, Heart, MapPin, Stethoscope } from 'lucide-react';
 type LangCode = 'en' | 'hi' | 'ta' | 'te' | 'kn' | 'ml';
 type SexOption = 'male' | 'female' | 'other';
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, '') ?? 'http://localhost:8000';
+// API_BASE is now imported from utils/api
 
 const LANGUAGE_OPTIONS: Array<{
   value: LangCode;
@@ -284,7 +283,7 @@ export default function Home() {
     setError(null);
 
     try {
-      const response = await axios.post(`${API_BASE}/chat`, {
+      const response = await apiClient.post(`${API_BASE}/chat`, {
         text: messageText,
         lang,
         profile,
@@ -429,7 +428,7 @@ export default function Home() {
       const formData = new FormData();
       formData.append('file', audioBlob, 'voice-note.webm');
 
-      const response = await axios.post(`${API_BASE}/stt`, formData, {
+      const response = await apiClient.post(`${API_BASE}/stt`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 

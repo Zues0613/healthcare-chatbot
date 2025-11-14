@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import { Check, Loader2, ShieldCheck, Sparkles, XCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { setAuth, type AuthUser } from '../../utils/auth';
+import { apiClient, API_BASE } from '../../utils/api';
 
 type ToastVariant = 'success' | 'error' | 'info';
 
@@ -141,8 +142,6 @@ export default function AuthExperience() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const simulateRequest = () => new Promise((resolve) => setTimeout(resolve, 1600));
-
   const handleSignUpSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (loading) return;
@@ -151,24 +150,42 @@ export default function AuthExperience() {
       return;
     }
     setLoading(true);
-    await simulateRequest();
-    setLoading(false);
     
-    // Set authentication state
-    const user: AuthUser = {
-      email: signUpForm.email,
-      fullName: signUpForm.fullName,
-      createdAt: new Date().toISOString(),
-    };
-    setAuth(user);
-    
-    addToast('Welcome aboard! Your profile is ready.', 'success');
-    setSignUpForm({ fullName: '', email: '', password: '', confirmPassword: '' });
-    
-    // Redirect to main chat interface
-    setTimeout(() => {
-      router.push('/');
-    }, 500);
+    try {
+      // Call backend registration API
+      const response = await apiClient.post(`${API_BASE}/auth/register`, {
+        email: signUpForm.email,
+        password: signUpForm.password,
+        age: undefined,
+        sex: undefined,
+        diabetes: false,
+        hypertension: false,
+        pregnancy: false,
+        city: undefined,
+      });
+      
+      // Set authentication state with user data from backend
+      const user: AuthUser = {
+        email: response.data.email,
+        fullName: signUpForm.fullName || response.data.email.split('@')[0],
+        createdAt: response.data.createdAt || new Date().toISOString(),
+      };
+      setAuth(user);
+      
+      addToast('Welcome aboard! Your profile is ready.', 'success');
+      setSignUpForm({ fullName: '', email: '', password: '', confirmPassword: '' });
+      
+      // Redirect to main chat interface
+      setTimeout(() => {
+        router.push('/');
+      }, 500);
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      const errorMessage = error.response?.data?.detail || 'Registration failed. Please try again.';
+      addToast(errorMessage, 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLoginSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -179,24 +196,36 @@ export default function AuthExperience() {
       return;
     }
     setLoading(true);
-    await simulateRequest();
-    setLoading(false);
     
-    // Set authentication state (in a real app, you'd get user data from the API)
-    const user: AuthUser = {
-      email: loginForm.email,
-      fullName: loginForm.email.split('@')[0], // Fallback name from email
-      createdAt: new Date().toISOString(),
-    };
-    setAuth(user);
-    
-    addToast('You are safely signed in. How can we support you today?', 'success');
-    setLoginForm((prev) => ({ ...prev, password: '' }));
-    
-    // Redirect to main chat interface
-    setTimeout(() => {
-      router.push('/');
-    }, 500);
+    try {
+      // Call backend login API
+      const response = await apiClient.post(`${API_BASE}/auth/login`, {
+        email: loginForm.email,
+        password: loginForm.password,
+      });
+      
+      // Set authentication state with user data from backend
+      const user: AuthUser = {
+        email: response.data.email,
+        fullName: response.data.email.split('@')[0], // Fallback name from email
+        createdAt: response.data.createdAt || new Date().toISOString(),
+      };
+      setAuth(user);
+      
+      addToast('You are safely signed in. How can we support you today?', 'success');
+      setLoginForm((prev) => ({ ...prev, password: '' }));
+      
+      // Redirect to main chat interface
+      setTimeout(() => {
+        router.push('/');
+      }, 500);
+    } catch (error: any) {
+      console.error('Login error:', error);
+      const errorMessage = error.response?.data?.detail || 'Invalid email or password. Please try again.';
+      addToast(errorMessage, 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const renderToastIcon = (variant: ToastVariant) => {

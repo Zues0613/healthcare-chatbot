@@ -10,6 +10,7 @@ class Profile(BaseModel):
     hypertension: bool = False
     pregnancy: bool = False
     city: Optional[str] = None
+    medical_conditions: List[str] = Field(default_factory=list)  # Additional medical conditions
 
     @field_validator("age")
     @classmethod

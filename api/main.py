@@ -103,23 +103,28 @@ app.include_router(auth_router)
 
 @app.on_event("startup")
 async def _startup() -> None:
-    """Initialize database on startup"""
+    """Initialize persistent database connection pool on startup"""
     try:
+        # Initialize PostgreSQL connection pool (persistent, stays alive)
         connected = await prisma_client.connect()
         if connected:
-            logger.info("Database initialized successfully with Prisma")
+            logger.info("PostgreSQL connection pool initialized successfully (persistent connection)")
         else:
             logger.warning("Database not connected - chat history will not be saved")
     except Exception as e:
-        logger.error(f"Failed to initialize database: {e}")
+        logger.error(f"Failed to initialize database: {e}", exc_info=True)
         logger.warning("Database not connected - chat history will not be saved")
 
 
 @app.on_event("shutdown")
 async def _shutdown() -> None:
+    """Cleanup database connections on shutdown"""
+    logger.info("Shutting down database connections...")
     if neo4j_client.driver:
         neo4j_client.close()
+    # Close PostgreSQL connection pool
     await prisma_client.disconnect()
+    logger.info("Database connections closed")
 
 app.add_middleware(
     CORSMiddleware,
@@ -1255,18 +1260,32 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
         route = "graph"
         
         user_conditions: List[str] = []
+        # Add conditions from boolean fields (for backward compatibility)
         if profile.diabetes:
             user_conditions.append("Diabetes")
         if profile.hypertension:
             user_conditions.append("Hypertension")
         if profile.pregnancy:
             user_conditions.append("Pregnancy")
+        
+        # Add conditions from medical_conditions array
+        if hasattr(profile, 'medical_conditions') and profile.medical_conditions:
+            for condition in profile.medical_conditions:
+                # Capitalize first letter for consistency
+                condition_label = condition.capitalize().replace("_", " ")
+                if condition_label not in user_conditions:
+                    user_conditions.append(condition_label)
 
         condition_keywords = {
             "diabetes": "Diabetes",
             "hypertension": "Hypertension",
             "pregnancy": "Pregnancy",
             "pregnant": "Pregnancy",
+            "asthma": "Asthma",
+            "heart disease": "Heart disease",
+            "kidney disease": "Kidney disease",
+            "liver disease": "Liver disease",
+            "epilepsy": "Epilepsy",
         }
         processed_lower = processed_text.lower()
         for keyword, label in condition_keywords.items():
@@ -1436,6 +1455,9 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
                 personalized_conditions.append("hypertension")
             if profile.pregnancy:
                 personalized_conditions.append("pregnancy")
+            # Add conditions from medical_conditions array
+            if hasattr(profile, 'medical_conditions') and profile.medical_conditions:
+                personalized_conditions.extend(profile.medical_conditions)
             if personalized_conditions:
                 context += (
                     "\n\nNote: User has "
@@ -1583,7 +1605,7 @@ async def chat(
                 )
                 
                 if chat_session:
-                    session_id = chat_session.id
+                    session_id = chat_session["id"]
                     
                     # Save user message
                     await db_service.save_chat_message(
@@ -1707,7 +1729,7 @@ async def voice_chat(
                 if profile_data:
                     customer = await db_service.update_customer_profile(authenticated_customer_id, profile_data)
                 
-                customer_id = customer.id
+                customer_id = customer["id"] if customer else authenticated_customer_id
                 
                 chat_session = await db_service.get_or_create_session(
                     customer_id=customer_id,
@@ -1716,7 +1738,7 @@ async def voice_chat(
                 )
                 
                 if chat_session:
-                    session_id = chat_session.id
+                    session_id = chat_session["id"]
                     
                     # Save user message
                     await db_service.save_chat_message(
@@ -1829,19 +1851,35 @@ async def get_customer(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     
+    # Get session count
+    sessions = await db_service.get_customer_sessions(customer_id, limit=1000)
+    session_count = len(sessions)
+    
+    # Parse medical_conditions from JSONB if it exists
+    medical_conditions = customer.get("medical_conditions")
+    if isinstance(medical_conditions, str):
+        import json
+        try:
+            medical_conditions = json.loads(medical_conditions)
+        except:
+            medical_conditions = []
+    elif medical_conditions is None:
+        medical_conditions = []
+    
     return {
-        "id": customer.id,
-        "email": customer.email,
-        "createdAt": customer.createdAt.isoformat() if customer.createdAt else None,
-        "updatedAt": customer.updatedAt.isoformat() if customer.updatedAt else None,
-        "age": customer.age,
-        "sex": customer.sex,
-        "diabetes": customer.diabetes,
-        "hypertension": customer.hypertension,
-        "pregnancy": customer.pregnancy,
-        "city": customer.city,
-        "metadata": customer.metadata,
-        "sessionCount": len(customer.chatSessions) if customer.chatSessions else 0,
+        "id": customer["id"],
+        "email": customer["email"],
+        "createdAt": customer["created_at"].isoformat() if customer.get("created_at") else None,
+        "updatedAt": customer["updated_at"].isoformat() if customer.get("updated_at") else None,
+        "age": customer.get("age"),
+        "sex": customer.get("sex"),
+        "diabetes": customer.get("diabetes", False),
+        "hypertension": customer.get("hypertension", False),
+        "pregnancy": customer.get("pregnancy", False),
+        "city": customer.get("city"),
+        "medicalConditions": medical_conditions,
+        "metadata": customer.get("metadata"),
+        "sessionCount": session_count,
     }
 
 
@@ -1878,18 +1916,20 @@ async def get_customer_sessions(
         )
     
     sessions = await db_service.get_customer_sessions(customer_id, limit=limit)
-    return [
-        {
-            "id": session.id,
-            "customerId": session.customerId,
-            "createdAt": session.createdAt.isoformat() if session.createdAt else None,
-            "updatedAt": session.updatedAt.isoformat() if session.updatedAt else None,
-            "language": session.language,
-            "sessionMetadata": session.sessionMetadata,
-            "messageCount": len(session.messages) if session.messages else 0,
-        }
-        for session in sessions
-    ]
+    result = []
+    for session in sessions:
+        # Get message count for this session
+        messages = await db_service.get_session_messages(session["id"], limit=1000)
+        result.append({
+            "id": session["id"],
+            "customerId": session["customer_id"],
+            "createdAt": session["created_at"].isoformat() if session.get("created_at") else None,
+            "updatedAt": session["updated_at"].isoformat() if session.get("updated_at") else None,
+            "language": session.get("language"),
+            "sessionMetadata": session.get("session_metadata"),
+            "messageCount": len(messages),
+        })
+    return result
 
 
 @app.get("/session/{session_id}/messages")
@@ -1924,7 +1964,7 @@ async def get_session_messages(
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
         
-        if session.customerId != user_id:
+        if session.get("customer_id") != user_id:
             raise HTTPException(
                 status_code=403,
                 detail="You can only view messages from your own sessions"
@@ -1933,18 +1973,18 @@ async def get_session_messages(
     messages = await db_service.get_session_messages(session_id, limit=limit)
     return [
         {
-            "id": message.id,
-            "sessionId": message.sessionId,
-            "createdAt": message.createdAt.isoformat() if message.createdAt else None,
-            "role": message.role,
-            "messageText": message.messageText,
-            "language": message.language,
-            "route": message.route,
-            "answer": message.answer,
-            "safetyData": message.safetyData,
-            "facts": message.facts,
-            "citations": message.citations,
-            "metadata": message.metadata,
+            "id": message["id"],
+            "sessionId": message["session_id"],
+            "createdAt": message["created_at"].isoformat() if message.get("created_at") else None,
+            "role": message["role"],
+            "messageText": message["message_text"],
+            "language": message.get("language"),
+            "route": message.get("route"),
+            "answer": message.get("answer"),
+            "safetyData": message.get("safety_data"),
+            "facts": message.get("facts"),
+            "citations": message.get("citations"),
+            "metadata": message.get("metadata"),
         }
         for message in messages
     ]
@@ -1979,41 +2019,51 @@ async def get_session(
         user_role = user.get("role", "user")
         user_id = user.get("user_id")
         
-        if user_role != "admin" and chat_session.customerId != user_id:
+        if user_role != "admin" and chat_session.get("customer_id") != user_id:
             raise HTTPException(
                 status_code=403,
                 detail="You can only view your own sessions"
             )
         
+        # Get customer info
+        customer = None
+        if chat_session.get("customer_id"):
+            customer_data = await db_service.get_customer(chat_session["customer_id"])
+            if customer_data:
+                customer = {
+                    "id": customer_data["id"],
+                    "email": customer_data["email"],
+                    "age": customer_data.get("age"),
+                    "sex": customer_data.get("sex"),
+                    "city": customer_data.get("city"),
+                }
+        
+        # Get messages
+        messages = chat_session.get("messages", [])
+        
         return {
-            "id": chat_session.id,
-            "customerId": chat_session.customerId,
-            "createdAt": chat_session.createdAt.isoformat() if chat_session.createdAt else None,
-            "updatedAt": chat_session.updatedAt.isoformat() if chat_session.updatedAt else None,
-            "language": chat_session.language,
-            "sessionMetadata": chat_session.sessionMetadata,
-            "customer": {
-                "id": chat_session.customer.id,
-                "email": chat_session.customer.email,
-                "age": chat_session.customer.age,
-                "sex": chat_session.customer.sex,
-                "city": chat_session.customer.city,
-            } if hasattr(chat_session, 'customer') and chat_session.customer else None,
+            "id": chat_session["id"],
+            "customerId": chat_session["customer_id"],
+            "createdAt": chat_session["created_at"].isoformat() if chat_session.get("created_at") else None,
+            "updatedAt": chat_session["updated_at"].isoformat() if chat_session.get("updated_at") else None,
+            "language": chat_session.get("language"),
+            "sessionMetadata": chat_session.get("session_metadata"),
+            "customer": customer,
             "messages": [
                 {
-                    "id": message.id,
-                    "createdAt": message.createdAt.isoformat() if message.createdAt else None,
-                    "role": message.role,
-                    "messageText": message.messageText,
-                    "language": message.language,
-                    "route": message.route,
-                    "answer": message.answer,
-                    "safetyData": message.safetyData,
-                    "facts": message.facts,
-                    "citations": message.citations,
-                    "metadata": message.metadata,
+                    "id": message["id"],
+                    "createdAt": message["created_at"].isoformat() if message.get("created_at") else None,
+                    "role": message["role"],
+                    "messageText": message["message_text"],
+                    "language": message.get("language"),
+                    "route": message.get("route"),
+                    "answer": message.get("answer"),
+                    "safetyData": message.get("safety_data"),
+                    "facts": message.get("facts"),
+                    "citations": message.get("citations"),
+                    "metadata": message.get("metadata"),
                 }
-                for message in chat_session.messages
+                for message in messages
             ],
         }
     except HTTPException:
