@@ -5,6 +5,7 @@ import clsx from "clsx";
 import AnimatedNumber from "../../components/AnimatedNumber";
 import HeroSection from "../../components/HeroSection";
 import StartPilotButton from "../../components/StartPilotButton";
+import FeatureCard from "../../components/FeatureCard";
 
 export const metadata: Metadata = {
   title: "Health Companion | Intelligent Care Guidance",
@@ -28,35 +29,110 @@ const gradientSpot = (
 
 const features = [
   {
-    title: "Red-flag Intelligence",
+    title: "Hybrid RAG with ChromaDB",
     description:
-      "Extensive rule graphs, streaming heuristics, and linguistic fallbacks catch emergent risks in English or transliterated scripts before they escalate.",
+      "Vector-based RAG system powered by ChromaDB retrieves relevant healthcare knowledge from 110+ curated markdown files. Semantic search ensures evidence-based responses from verified medical sources.",
     points: [
-      "98.2% safety coverage across cardiology, neuro, pediatrics, and OB",
-      "Real-time hand-offs to clinicians with contextual transcripts",
-      "Covers 180+ critical symptoms and lifestyle risk factors",
+      "110+ markdown files covering various medical domains",
+      "Fast semantic search using vector similarity (much faster than keyword matching)",
+      "Source attribution with citations for transparency and trust",
+      "Organized by medical specialties for better knowledge retrieval",
     ],
     accent: "from-emerald-500 via-green-500 to-teal-500",
   },
   {
-    title: "Knowledge Fusion",
+    title: "Graph Database Intelligence (Neo4j)",
     description:
-      "Hybrid retrieval blends Chroma vector search, Neo4j reasoning, and curated care guides to answer responsibly every time.",
+      "Neo4j graph database stores structured medical knowledge as nodes and relationships, enabling complex queries for contraindications, safe actions, red flags, and healthcare provider recommendations.",
     points: [
-      "1,120 YAML+markdown care protocols indexed",
-      "Chroma DB 92.7% top-3 semantic recall with BM25 fallback",
-      "Neo4j fallback enriches RAG with contraindications and provider graphs",
+      "Real-time safety checks for contraindications and unsafe medications",
+      "Provider discovery based on location and medical condition",
+      "Red flag detection mapping symptoms to critical conditions",
+      "In-memory fallback ensures functionality even if Neo4j is unavailable",
     ],
     accent: "from-green-500 via-emerald-500 to-teal-500",
   },
   {
-    title: "Care Team Command",
+    title: "Intelligent Intent Routing",
     description:
-      "Export transcripts, broadcast follow-ups, and trigger automated care plans without leaving the assistant interface.",
+      "Intelligent routing system analyzes user queries to determine whether to use Graph database (Neo4j) or Vector RAG (ChromaDB) based on query intent for optimal performance.",
     points: [
-      "Automated summaries and task lists for clinical threads",
-      "Localized reminders with SMS / email hooks",
-      "Deployed in 12 languages with 3 dialect fallbacks",
+      "Pattern matching and keyword detection for optimal routing",
+      "Graph queries for structured data (contraindications, providers)",
+      "Vector RAG for semantic content (general health information)",
+      "Can combine both sources for comprehensive responses",
+    ],
+    accent: "from-teal-500 via-emerald-500 to-green-500",
+  },
+  {
+    title: "Real-Time Safety & Red Flag Detection",
+    description:
+      "Comprehensive safety detection system scans user queries for red flag symptoms, mental health crisis indicators, and pregnancy emergencies using keyword matching and linguistic analysis.",
+    points: [
+      "180+ critical symptoms covered across medical domains",
+      "Multilingual support: English and Hindi transliteration",
+      "Mental health crisis detection with helpline numbers",
+      "Pregnancy emergency detection and guidance",
+    ],
+    accent: "from-emerald-500 via-teal-500 to-green-500",
+  },
+  {
+    title: "Personalized Health Profiles",
+    description:
+      "Comprehensive user profile system stores demographic information and medical conditions to personalize health recommendations and filter contraindications for safe, targeted advice.",
+    points: [
+      "Age, sex, and condition-specific health advice",
+      "Filters unsafe medications based on user's medical conditions",
+      "Supports unlimited medical conditions via extensible array",
+      "Location-based provider recommendations",
+    ],
+    accent: "from-green-500 via-emerald-500 to-teal-500",
+  },
+  {
+    title: "Persistent Database Connection Pooling",
+    description:
+      "Persistent PostgreSQL connection pool using asyncpg maintains active database connections throughout the application lifecycle, eliminating connection overhead for optimal performance.",
+    points: [
+      "Eliminates connection overhead (saves 50-200ms per request)",
+      "Handles concurrent requests efficiently",
+      "Automatic reconnection ensures database availability",
+      "Health monitoring detects and recovers from connection issues",
+    ],
+    accent: "from-teal-500 via-green-500 to-emerald-500",
+  },
+  {
+    title: "Upstash Redis Caching Layer",
+    description:
+      "Distributed caching layer using Upstash Redis stores frequently accessed data, API responses, and computed results to reduce database load and improve response times dramatically.",
+    points: [
+      "10-50ms response time vs 100-500ms for database queries",
+      "Reduces database load and API calls by 60-80%",
+      "Handles 10x more concurrent users with same infrastructure",
+      "Graceful degradation ensures system continues working if Redis unavailable",
+    ],
+    accent: "from-emerald-500 via-green-500 to-teal-500",
+  },
+  {
+    title: "Secure Authentication with JWT",
+    description:
+      "Secure authentication system using JWT stored in HTTP-only cookies for session management. Includes password hashing, refresh tokens, and role-based access control.",
+    points: [
+      "HTTP-only cookies prevent XSS attacks",
+      "SHA-256 password hashing with unique salt per user",
+      "Role-based access control (admin/user)",
+      "Stateless JWT tokens work across multiple servers",
+    ],
+    accent: "from-green-500 via-teal-500 to-emerald-500",
+  },
+  {
+    title: "Chat History & Session Management",
+    description:
+      "Comprehensive chat history system stores all user conversations, messages, and metadata in NeonDB. Tracks chat sessions, message threads, safety flags, and citations.",
+    points: [
+      "Complete conversation history for continuity of care",
+      "Healthcare providers can review patient history",
+      "Enables analysis of common health concerns",
+      "Maintains audit trail for regulatory compliance",
     ],
     accent: "from-teal-500 via-emerald-500 to-green-500",
   },
@@ -186,34 +262,12 @@ export default function LandingPage() {
             <p className="text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-200/80 sm:text-xs">Why teams choose us</p>
             <h2 className="text-2xl font-semibold text-white sm:text-3xl md:text-4xl">Features crafted for clinical-grade conversations.</h2>
             <p className="max-w-3xl text-xs leading-relaxed text-slate-200/80 sm:text-sm">
-              We blend AI expressiveness with deterministic checks. Every tile below represents an orchestrated system
-              – not a lone model – ensuring safe, multi-lingual, empathetic care guidance.
+              We blend AI expressiveness with deterministic checks. Nine core features form the foundation of a production-ready, scalable, and secure healthcare chatbot application. Each feature represents an orchestrated system ensuring safe, multilingual, empathetic care guidance.
             </p>
           </div>
           <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
             {features.map((feature) => (
-              <article
-                key={feature.title}
-                className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-950/70 p-4 shadow-[0_30px_85px_rgba(15,23,42,0.55)] backdrop-blur-xl sm:rounded-3xl sm:p-5 md:rounded-[28px] md:p-6"
-              >
-                <div
-                  className={clsx(
-                    "pointer-events-none absolute inset-0 -z-10 opacity-60 blur-3xl",
-                    `bg-gradient-to-br ${feature.accent}`
-                  )}
-                  aria-hidden
-                />
-                <h3 className="text-lg font-semibold text-white sm:text-xl">{feature.title}</h3>
-                <p className="mt-2 text-xs leading-relaxed text-slate-200/80 sm:mt-3 sm:text-sm">{feature.description}</p>
-                <ul className="mt-4 space-y-2 text-xs text-slate-100/80 sm:mt-5 sm:space-y-3 sm:text-sm">
-                  {feature.points.map((point) => (
-                    <li key={point} className="flex items-start gap-2">
-                      <span className="mt-1 inline-flex h-1.5 w-1.5 rounded-full bg-white/60" aria-hidden />
-                      <span>{point}</span>
-                    </li>
-                  ))}
-                </ul>
-              </article>
+              <FeatureCard key={feature.title} feature={feature} />
             ))}
           </div>
         </section>

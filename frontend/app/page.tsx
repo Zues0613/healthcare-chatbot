@@ -687,7 +687,11 @@ export default function Home() {
       </div>
 
       <div className={mainLayoutClasses}>
-        <header className="flex items-center justify-between border-b border-white/10 bg-slate-900/60 px-3 py-3 shadow-[0_25px_60px_rgba(15,23,42,0.55)] backdrop-blur-lg sm:px-4 sm:py-4 md:px-6 lg:px-10">
+        <header className={clsx(
+          "fixed top-0 z-[100] flex items-center justify-between border-b border-white/10 bg-slate-900/95 backdrop-blur-xl px-3 py-3 shadow-[0_25px_60px_rgba(15,23,42,0.75)] transition-[left] duration-300 sm:px-4 sm:py-4 md:px-6 lg:px-10",
+          isSidebarOpen ? 'lg:left-72' : 'lg:left-16',
+          'left-0 right-0 lg:right-0'
+        )}>
           <div className="flex items-center gap-2 sm:gap-3">
           <button
                 type="button"
@@ -745,7 +749,7 @@ export default function Home() {
               </div>
         </header>
 
-        <main className="flex-1 px-3 pb-28 pt-4 sm:px-4 sm:pb-32 sm:pt-6 md:px-6 lg:px-10">
+        <main className="flex-1 px-3 pb-28 pt-20 sm:px-4 sm:pb-32 sm:pt-24 md:px-6 md:pt-28 lg:px-10">
           <div className="mx-auto flex h-full max-w-4xl flex-col gap-4 sm:gap-6">
             {messages.length === 0 && (
               <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-5 shadow-[0_35px_90px_rgba(15,23,42,0.65)] backdrop-blur-xl sm:rounded-[30px] sm:px-5 sm:py-6 md:px-6 lg:px-8">
