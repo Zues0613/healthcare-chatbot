@@ -175,6 +175,11 @@ export default function AuthExperience() {
       addToast('Welcome aboard! Your profile is ready.', 'success');
       setSignUpForm({ fullName: '', email: '', password: '', confirmPassword: '' });
       
+      // Set flag to show welcome screen BEFORE redirect
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('justLoggedIn', 'true');
+      }
+      
       // Redirect to main chat interface
       setTimeout(() => {
         router.push('/');
@@ -214,6 +219,11 @@ export default function AuthExperience() {
       
       addToast('You are safely signed in. How can we support you today?', 'success');
       setLoginForm((prev) => ({ ...prev, password: '' }));
+      
+      // Set flag to show welcome screen BEFORE redirect
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('justLoggedIn', 'true');
+      }
       
       // Redirect to main chat interface
       setTimeout(() => {

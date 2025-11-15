@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
 import clsx from "clsx";
+import AnimatedNumber from "../../components/AnimatedNumber";
+import HeroSection from "../../components/HeroSection";
 
 export const metadata: Metadata = {
   title: "Health Companion | Intelligent Care Guidance",
@@ -175,85 +178,7 @@ export default function LandingPage() {
       </header>
 
       <main className="relative z-10">
-        <section className="mx-auto flex w-full max-w-6xl flex-col gap-12 px-6 py-16 lg:flex-row lg:items-center lg:gap-16 lg:px-10 lg:py-24">
-          <div className="flex-1 space-y-8">
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-200 shadow-[0_12px_35px_rgba(16,185,129,0.25)]">
-              <span className="inline-flex h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-300" aria-hidden />
-              Always-on Care Navigation
-            </div>
-            <div className="space-y-5">
-              <h1 className="text-4xl font-semibold text-white sm:text-5xl lg:text-6xl">
-                One-click clarity for complex health journeys.
-              </h1>
-              <p className="max-w-2xl text-lg leading-relaxed text-slate-200">
-                From symptom triage to warm hand-offs, Health Companion blends compassionate dialogue with
-                clinical guardrails. Discover a canvas where glowing analytics, guided workflows, and real-world
-                care converge in seconds.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-4">
-              <Link
-                href="/auth"
-                className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 px-6 py-3 text-sm font-semibold text-white shadow-[0_22px_45px_rgba(16,185,129,0.35)] transition hover:scale-[1.04]"
-              >
-                Get Started
-              </Link>
-              <Link
-                href="#insights"
-                className="inline-flex items-center gap-2 rounded-full border border-white/10 px-6 py-3 text-sm font-semibold text-slate-100 transition hover:border-white/25 hover:text-white"
-              >
-                Explore Insights
-              </Link>
-            </div>
-          </div>
-          <div className="flex-1 rounded-[32px] border border-white/10 bg-white/5 p-6 shadow-[0_30px_90px_rgba(15,23,42,0.55)] backdrop-blur-xl">
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold uppercase tracking-[0.32em] text-emerald-200/90">
-                  Live safety pulse
-                </p>
-                <span className="inline-flex items-center gap-2 text-xs text-slate-200">
-                  <span className="inline-flex h-2 w-2 animate-ping rounded-full bg-emerald-300" aria-hidden />
-                  Monitoring
-                </span>
-              </div>
-              <div className="rounded-3xl border border-white/10 bg-white/10 p-6 text-slate-100 shadow-inner shadow-emerald-500/10">
-                <p className="text-xs uppercase tracking-[0.32em] text-emerald-100/80">Guardrails</p>
-                <h3 className="mt-2 text-2xl font-semibold text-white">Red-flag intercept</h3>
-                <p className="mt-3 text-sm leading-relaxed text-slate-100/70">
-                  98% of emergencies flagged before hand-off. Visualize trending symptom signals and confidence
-                  scores to keep every conversation safe.
-                </p>
-                <div className="mt-6">
-                  <div className="flex items-end gap-3">
-                    {[65, 82, 74, 91].map((value, index) => (
-                      <div key={index} className="flex flex-1 flex-col items-center gap-2">
-                        <div className="flex w-3 rounded-full bg-emerald-400/30">
-                          <div
-                            aria-hidden
-                            className="mx-auto w-full rounded-full bg-gradient-to-b from-emerald-200 to-emerald-500"
-                            style={{ height: `${value}%` }}
-                          />
-                        </div>
-                        <span className="text-[0.6rem] font-semibold uppercase tracking-[0.32em] text-emerald-200/80">
-                          wk{index + 1}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-3xl border border-white/10 bg-white/10 p-6 text-slate-100 shadow-inner shadow-emerald-500/10">
-                <p className="text-xs uppercase tracking-[0.32em] text-teal-200/80">Care loops</p>
-                <h3 className="mt-2 text-xl font-semibold text-white">Return visit readiness</h3>
-                <p className="mt-3 text-sm leading-relaxed text-slate-100/70">
-                  Track adherence, surface nudge moments, and hand off escalations to clinical teams with
-                  complete context.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
+        <HeroSection />
 
         <section id="features" className="mx-auto w-full max-w-6xl px-6 py-16 lg:px-10 lg:py-20">
           <div className="mb-10 flex flex-col gap-4 text-center sm:text-left">
@@ -382,50 +307,6 @@ export default function LandingPage() {
                   </div>
                 </div>
               </div>
-              <div className="rounded-[28px] border border-white/10 bg-slate-950/70 p-6 text-slate-100 shadow-[0_30px_90px_rgba(15,23,42,0.55)]">
-                <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-200/90">
-                  Integrations
-                </p>
-                <div className="grid gap-4">
-                  <div className="group rounded-[26px] border border-white/10 bg-gradient-to-br from-slate-950 via-slate-950/90 to-teal-950/80 p-5 text-sm text-slate-100 shadow-[0_28px_80px_rgba(15,23,42,0.45)] transition hover:border-emerald-400/50 hover:shadow-[0_35px_95px_rgba(16,185,129,0.35)]">
-                    <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200/70">
-                      <span className="inline-flex items-center gap-2">
-                        <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400" aria-hidden />
-                        EHR
-                      </span>
-                      <span className="text-white/60">Integration</span>
-                    </div>
-                    <p className="mt-2 text-sm leading-relaxed text-slate-100/80">
-                      Connect with your electronic health record to pull patient history, lab results, and
-                      medication lists.
-                    </p>
-                  </div>
-                  <div className="group rounded-[26px] border border-white/10 bg-gradient-to-br from-slate-950 via-slate-950/90 to-teal-950/80 p-5 text-sm text-slate-100 shadow-[0_28px_80px_rgba(15,23,42,0.45)] transition hover:border-emerald-400/50 hover:shadow-[0_35px_95px_rgba(16,185,129,0.35)]">
-                    <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200/70">
-                      <span className="inline-flex items-center gap-2">
-                        <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400" aria-hidden />
-                        SMS
-                      </span>
-                      <span className="text-white/60">Integration</span>
-                    </div>
-                    <p className="mt-2 text-sm leading-relaxed text-slate-100/80">
-                      Send automated SMS reminders for follow-ups, medication adherence, and urgent alerts.
-                    </p>
-                  </div>
-                  <div className="group rounded-[26px] border border-white/10 bg-gradient-to-br from-slate-950 via-slate-950/90 to-teal-950/80 p-5 text-sm text-slate-100 shadow-[0_28px_80px_rgba(15,23,42,0.45)] transition hover:border-emerald-400/50 hover:shadow-[0_35px_95px_rgba(16,185,129,0.35)]">
-                    <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200/70">
-                      <span className="inline-flex items-center gap-2">
-                        <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400" aria-hidden />
-                        Email
-                      </span>
-                      <span className="text-white/60">Integration</span>
-                    </div>
-                    <p className="mt-2 text-sm leading-relaxed text-slate-100/80">
-                      Receive secure, HIPAA-compliant email notifications for critical alerts and follow-ups.
-                    </p>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </section>
@@ -462,7 +343,9 @@ export default function LandingPage() {
                 <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-200/80">
                   {highlight.title}
                 </p>
-                <p className="mt-3 text-4xl font-semibold text-white">{highlight.value}</p>
+                <p className="mt-3 text-4xl font-semibold text-white">
+                  <AnimatedNumber value={highlight.value} duration={2000} />
+                </p>
                 <p className="mt-4 text-sm leading-relaxed text-slate-200/80">
                   {highlight.description}
                 </p>
@@ -550,44 +433,105 @@ export default function LandingPage() {
               .delay-4 { animation-delay: 1.6s; }
               .delay-5 { animation-delay: 2s; }
               .delay-6 { animation-delay: 2.4s; }
+              
+              /* Hover expand/collapse styles */
+              .retrieval-container .stage-card {
+                transition: all 0.3s ease;
+                min-height: 140px;
+              }
+              .retrieval-container .stage-card .stage-description {
+                max-height: 0;
+                opacity: 0;
+                overflow: hidden;
+                transition: max-height 0.3s ease, opacity 0.3s ease, margin 0.3s ease;
+                margin-top: 0;
+              }
+              .retrieval-container .stage-card .stage-progress {
+                max-height: 0;
+                opacity: 0;
+                overflow: hidden;
+                transition: max-height 0.3s ease, opacity 0.3s ease, margin 0.3s ease;
+                margin-top: 0;
+              }
+              /* When hovering container, shrink non-hovered cards */
+              .retrieval-container:has(.stage-card:hover) .stage-card:not(:hover) {
+                min-height: 120px;
+                transform: scale(0.95);
+              }
+              /* Expand hovered card */
+              .retrieval-container .stage-card:hover {
+                min-height: auto;
+                transform: scale(1.05);
+                z-index: 10;
+              }
+              .retrieval-container .stage-card:hover .stage-description {
+                max-height: 500px;
+                opacity: 1;
+                margin-top: 0.5rem;
+              }
+              .retrieval-container .stage-card:hover .stage-progress {
+                max-height: 8px;
+                opacity: 1;
+                margin-top: 1rem;
+              }
+              /* When no card is hovered, all can be slightly larger */
+              .retrieval-container:not(:has(.stage-card:hover)) .stage-card {
+                min-height: 140px;
+              }
+              /* Diminish arrows when hovering on any card */
+              .retrieval-container:has(.stage-card:hover) .stage-card-arrow {
+                opacity: 0.25;
+                transform: scale(0.65);
+                transition: opacity 0.3s ease, transform 0.3s ease;
+              }
+              /* Completely hide arrows when a card is hovered to avoid content obstruction */
+              .retrieval-container .stage-card:hover .stage-card-arrow {
+                opacity: 0.15;
+                transform: scale(0.5);
+              }
             `}} />
             <div className="mt-8">
-              <div className="mx-auto grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+              <div className="retrieval-container mx-auto grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
                 {[
                   { 
-                    label: "Text Input", 
+                    label: "User text", 
                     description: "Typed or voice captured, normalized and ready for processing.",
                     icon: "📥",
                     animation: "icon-bounce delay-0"
                   },
                   { 
-                    label: "Lang Detect & Translate", 
-                    description: "Automatic language detection and translation to English for processing.",
-                    icon: "🌐",
+                    label: "Detect and translate", 
+                    description: "Using gpt 4.1, the app detects the incoming language and automatically translates it into English.",
+                    icon: "/chatgpt-seeklogo.png",
+                    isImage: true,
                     animation: "icon-pulse delay-1"
                   },
                   { 
                     label: "ChromaDB", 
                     description: "Vector retrieval across 1,120 medical briefs and playbooks.",
-                    icon: "🔍",
+                    icon: "/chroma-seeklogo.png",
+                    isImage: true,
                     animation: "icon-pulse delay-2"
                   },
                   { 
-                    label: "Neo4j Fallback", 
+                    label: "Neo4j (with fallback)", 
                     description: "Graph fallback inserts contraindications, providers, and safety edges.",
-                    icon: "🕸️",
+                    icon: "/neo4j-seeklogo.png",
+                    isImage: true,
                     animation: "icon-rotate delay-3"
                   },
                   { 
-                    label: "OpenAI", 
-                    description: "Guardrailed LLM crafts empathetic guidance with deterministic rules.",
-                    icon: "🤖",
+                    label: "Final reasoning → English", 
+                    description: "GPT-4.1-mini gives clear step-by-step reasoning and delivers the final answer in English.",
+                    icon: "/chatgpt-seeklogo.png",
+                    isImage: true,
                     animation: "icon-shake delay-4"
                   },
                   { 
-                    label: "Language Translation", 
-                    description: "Response translated back to user's preferred language with context preservation.",
-                    icon: "🔄",
+                    label: "Translate to User's Language", 
+                    description: "GPT-4.1-mini delivers the response in the user's preferred language while keeping the meaning intact.",
+                    icon: "/chatgpt-seeklogo.png",
+                    isImage: true,
                     animation: "icon-float delay-5"
                   },
                   { 
@@ -599,7 +543,7 @@ export default function LandingPage() {
                 ].map((stage, index, arr) => (
                   <div key={stage.label} className="relative">
                     <div className={clsx(
-                      "relative flex h-full flex-col rounded-[20px] border border-white/10 bg-gradient-to-br from-emerald-500/10 via-green-500/8 to-teal-500/10 p-4 shadow-[0_20px_50px_rgba(15,23,42,0.5)] backdrop-blur-sm transition-all hover:scale-[1.05] hover:border-emerald-400/50 hover:shadow-[0_30px_80px_rgba(16,185,129,0.35)] card-pulse lg:p-5",
+                      "stage-card relative flex h-full flex-col rounded-[20px] border border-white/10 bg-gradient-to-br from-emerald-500/10 via-green-500/8 to-teal-500/10 p-4 shadow-[0_20px_50px_rgba(15,23,42,0.5)] backdrop-blur-sm transition-all hover:border-emerald-400/50 hover:shadow-[0_30px_80px_rgba(16,185,129,0.35)] card-pulse lg:p-5",
                       index === 0 && "delay-0",
                       index === 1 && "delay-1",
                       index === 2 && "delay-2",
@@ -611,15 +555,25 @@ export default function LandingPage() {
                       <div className="absolute inset-0 -z-10 rounded-[24px] bg-gradient-to-br from-emerald-500/5 via-green-500/3 to-teal-500/5 opacity-0 blur-xl transition-opacity hover:opacity-100" />
                       <div className="mb-3 flex items-center justify-between">
                         <span className={`flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500/20 via-green-500/15 to-teal-500/20 text-xl shadow-inner shadow-emerald-500/10 transition-transform hover:scale-110 ${stage.animation} icon-glow lg:h-12 lg:w-12 lg:text-2xl`}>
-                          {stage.icon}
+                          {stage.isImage ? (
+                            <Image 
+                              src={stage.icon} 
+                              alt={stage.label}
+                              width={40}
+                              height={40}
+                              className="object-contain h-8 w-8 lg:h-10 lg:w-10"
+                            />
+                          ) : (
+                            stage.icon
+                          )}
                         </span>
                         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-bold text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.3)] animate-pulse lg:h-7 lg:w-7">
                           {index + 1}
                         </span>
                       </div>
                       <h3 className="mb-2 text-base font-semibold text-white transition-colors hover:text-emerald-300 lg:text-lg">{stage.label}</h3>
-                      <p className="text-xs leading-relaxed text-slate-200/80 lg:text-sm">{stage.description}</p>
-                      <div className="mt-4 h-1 w-full overflow-hidden rounded-full bg-emerald-500/10">
+                      <p className="stage-description text-xs leading-relaxed text-slate-200/80 lg:text-sm">{stage.description}</p>
+                      <div className="stage-progress h-1 w-full overflow-hidden rounded-full bg-emerald-500/10">
                         <div className={`h-full rounded-full bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 animate-pulse`} style={{ 
                           animation: `pulse 2s ease-in-out infinite`,
                           animationDelay: `${index * 0.3}s`
@@ -627,7 +581,7 @@ export default function LandingPage() {
                       </div>
                     </div>
                     {index < arr.length - 1 && (
-                      <div className="absolute -right-2 top-1/2 z-10 hidden -translate-y-1/2 xl:flex xl:-right-3">
+                      <div className="stage-card-arrow absolute -right-2 top-1/2 z-10 hidden -translate-y-1/2 transition-all xl:flex xl:-right-3">
                         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500/30 via-green-500/20 to-teal-500/30 shadow-[0_8px_24px_rgba(16,185,129,0.3)] backdrop-blur-sm xl:h-10 xl:w-10">
                           <svg
                             className="h-4 w-4 text-emerald-300 arrow-animate xl:h-5 xl:w-5"
@@ -697,9 +651,6 @@ export default function LandingPage() {
             </Link>
             <Link href="/terms" className="hover:text-white">
               Terms
-            </Link>
-            <Link href="https://www.linkedin.com" target="_blank" className="hover:text-white">
-              LinkedIn
             </Link>
           </div>
         </div>

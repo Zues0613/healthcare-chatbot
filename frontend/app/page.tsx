@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient, API_BASE } from '../utils/api';
-import { isAuthenticated } from '../utils/auth';
+import { isAuthenticated, clearAuth, getAuthUser } from '../utils/auth';
 import {
   AlertTriangle,
   Check,
@@ -17,12 +17,18 @@ import {
   Share2,
   Sparkle,
   X,
+  Plus,
+  Search,
+  User,
+  LogOut,
 } from 'lucide-react';
 import ChatMessage, { type ChatMessageModel } from '../components/ChatMessage';
 import LoadingSkeleton from '../components/LoadingSkeleton';
 import ErrorCallout from '../components/ErrorCallout';
 import ProfileCard from '../components/ProfileCard';
 import TopicSuggestions from '../components/TopicSuggestions';
+import WelcomeScreen from '../components/WelcomeScreen';
+import SearchChatsModal from '../components/SearchChatsModal';
 import { TOPIC_CATEGORIES } from '../data/topics';
 import { CalendarDays, Heart, MapPin, Stethoscope } from 'lucide-react';
 
@@ -153,6 +159,8 @@ export default function Home() {
   const [profileLoading, setProfileLoading] = useState(true);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [showSearchChats, setShowSearchChats] = useState(false);
 
   // All refs must be declared before any conditional returns
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -162,9 +170,6 @@ export default function Home() {
   const shareFeedbackTimeoutRef = useRef<number | null>(null);
 
   // All useMemo hooks must be before conditional returns
-  const quickSuggestionPrompts = useMemo(() => {
-    return TOPIC_CATEGORIES.flatMap((category) => category.suggestions.map((suggestion) => suggestion.prompt)).slice(0, 6);
-  }, []);
 
   const currentLanguage =
     LANGUAGE_OPTIONS.find((option) => option.value === lang) ?? LANGUAGE_OPTIONS[0];
@@ -175,6 +180,24 @@ export default function Home() {
       router.push('/landing');
     } else {
       setIsAuthChecked(true);
+      // Check if we should show welcome screen (when coming from /auth)
+      // Use a small delay to ensure sessionStorage is available
+      const checkWelcome = () => {
+        if (typeof window !== 'undefined') {
+          const justLoggedIn = sessionStorage.getItem('justLoggedIn') === 'true';
+          
+          if (justLoggedIn) {
+            setShowWelcome(true);
+            // Clear the flag immediately so it doesn't show again on refresh
+            sessionStorage.removeItem('justLoggedIn');
+          }
+        }
+      };
+      
+      // Check immediately and also after a small delay to catch any timing issues
+      checkWelcome();
+      const timer = setTimeout(checkWelcome, 100);
+      return () => clearTimeout(timer);
     }
   }, [router]);
 
@@ -345,12 +368,6 @@ export default function Home() {
     }
   }, []);
 
-  const handleQuickPrompt = useCallback(
-    (prompt: string) => {
-      void handleSend(prompt);
-    },
-    [handleSend]
-  );
 
   const handleShareConversation = useCallback(async () => {
     if (typeof navigator === 'undefined') {
@@ -464,6 +481,11 @@ export default function Home() {
     return null;
   }
 
+  // Handle welcome screen completion
+  const handleWelcomeComplete = () => {
+    setShowWelcome(false);
+  };
+
   const startRecording = async () => {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
       setError('Microphone access is not available in this environment.');
@@ -515,10 +537,47 @@ export default function Home() {
     setShowProfile(true);
   };
 
+  const handleSelectSession = async (sessionId: string) => {
+    try {
+      // Fetch the session with messages
+      const response = await apiClient.get(`${API_BASE}/session/${sessionId}`);
+      const session = response.data;
+      
+      if (session && session.messages) {
+        // Convert session messages to ChatEntry format
+        const chatEntries: ChatEntry[] = session.messages.map((msg: any) => ({
+          id: msg.id,
+          role: msg.role,
+          content: msg.messageText || msg.answer || '',
+          timestamp: msg.createdAt || formatTimestamp(),
+          language: msg.language || lang,
+          route: msg.route,
+          safety: msg.safetyData,
+          facts: msg.facts,
+          citations: msg.citations,
+        }));
+        
+        setMessages(chatEntries);
+        setHasInteracted(true);
+        setError(null);
+      }
+    } catch (err: any) {
+      console.error('Error loading session:', err);
+      setError('Failed to load chat session');
+    }
+  };
+
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_15%,rgba(16,185,129,0.55),transparent_55%),radial-gradient(circle_at_85%_5%,rgba(34,197,94,0.4),transparent_55%),linear-gradient(180deg,rgba(2,6,23,0.92),rgba(2,6,23,0.95))]" />
-      <div className="relative z-10">
+    <>
+      {showWelcome && <WelcomeScreen onComplete={handleWelcomeComplete} />}
+      <SearchChatsModal
+        isOpen={showSearchChats}
+        onClose={() => setShowSearchChats(false)}
+        onSelectSession={handleSelectSession}
+      />
+      <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_15%,rgba(16,185,129,0.55),transparent_55%),radial-gradient(circle_at_85%_5%,rgba(34,197,94,0.4),transparent_55%),linear-gradient(180deg,rgba(2,6,23,0.92),rgba(2,6,23,0.95))]" />
+        <div className="relative z-10">
       <aside
         className={sidebarClasses}
         aria-label="Primary navigation"
@@ -536,30 +595,69 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="space-y-5 pt-6">
-          <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-5 shadow-[0_25px_60px_rgba(16,185,129,0.12)]">
-            <p className="text-sm font-semibold text-white/90">Welcome back</p>
-            <p className="mt-2 text-sm leading-relaxed text-slate-300">
-              I'm ready whenever you need help planning next steps or spotting red flags.
-            </p>
+        <div className="flex-1 space-y-5 pt-6">
+          <button
+            type="button"
+            onClick={() => {
+              setMessages([]);
+              setInputValue('');
+              setError(null);
+              setHasInteracted(false);
+            }}
+            className="flex w-full items-center gap-3 rounded-lg border border-white/10 bg-slate-800/50 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-emerald-400/50 hover:bg-slate-800/70 hover:text-white"
+          >
+            <Plus className="h-4 w-4" />
+            <span>New chat</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowSearchChats(true)}
+            className="flex w-full items-center gap-3 rounded-lg border border-white/10 bg-slate-800/50 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-emerald-400/50 hover:bg-slate-800/70 hover:text-white"
+          >
+            <Search className="h-4 w-4" />
+            <span>Search chats</span>
+          </button>
+
+          <div className="pt-2">
+            <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Chats</p>
+            <div className="space-y-1">
+              {/* Chat history will be displayed here */}
+              <div className="rounded-lg px-3 py-2 text-sm text-slate-300">
+                No chat history yet
+              </div>
+            </div>
           </div>
 
           {error && !hasInteracted && (
             <ErrorCallout message={error} onDismiss={handleDismissError} />
           )}
+        </div>
 
-
-          <TopicSuggestions
-            onSuggestionSelect={(prompt) => {
-              void handleSend(prompt);
-            }}
-            onAfterSelect={() => {
-              if (!isDesktop) {
-                setIsSidebarOpen(false);
-              }
-            }}
-          />
+        <div className="mt-auto border-t border-white/10 pt-4">
+          <div className="flex items-center gap-3 px-3 py-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 text-xs font-semibold text-white">
+              <User className="h-4 w-4" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-white">
+                {getAuthUser()?.fullName || getAuthUser()?.email?.split('@')[0] || 'User'}
+              </p>
+              <p className="text-xs text-slate-400">Free</p>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              clearAuth();
+              router.push('/landing');
+            }}
+            className="mt-2 flex w-full items-center gap-3 rounded-lg border border-white/10 bg-slate-800/50 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-red-400/50 hover:bg-slate-800/70 hover:text-red-200"
+          >
+            <LogOut className="h-4 w-4" />
+            <span>Logout</span>
+          </button>
+        </div>
       </aside>
 
       {isSidebarOpen && (
@@ -649,44 +747,41 @@ export default function Home() {
 
         <main className="flex-1 px-4 pb-32 pt-6 sm:px-6 lg:px-10">
           <div className="mx-auto flex h-full max-w-4xl flex-col gap-6">
-            <section className="relative overflow-hidden rounded-[30px] border border-white/10 bg-slate-900/60 px-5 py-6 shadow-[0_35px_90px_rgba(15,23,42,0.65)] backdrop-blur-xl sm:px-6 lg:px-8">
-              <div
-                className="absolute inset-y-0 right-0 w-[55%] opacity-60 blur-3xl bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500"
-                aria-hidden
-              />
-              <div className="relative flex flex-col gap-5">
-                <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.32em] text-emerald-300/80">
-                  <span className="flex h-2 w-2 rounded-full bg-emerald-400" aria-hidden />
-                  Ready when you are
-                </div>
-                <h2 className="text-3xl font-bold text-white sm:text-4xl lg:text-5xl">
-                  How can I care for you today?
-                </h2>
-                <p className="max-w-3xl text-sm leading-relaxed text-slate-200 sm:text-base">
-                  Share what’s on your mind—symptoms you’re noticing, questions about self-care, or worries about emergencies. I’ll
-                  help you navigate next steps with calm, clinically aligned guidance.
-                </p>
-                <div className="flex flex-wrap gap-2 text-sm text-slate-200">
-                  {quickSuggestionPrompts.map((prompt) => (
-                    <button
-                      key={prompt}
-                      type="button"
-                      onClick={() => handleQuickPrompt(prompt)}
-                      className="rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-3 text-left shadow-[0_18px_45px_rgba(16,185,129,0.12)] transition hover:border-emerald-300/60 hover:text-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
-                    >
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex items-start gap-3 rounded-2xl border border-emerald-400/40 bg-gradient-to-r from-emerald-500/20 via-green-500/10 to-teal-500/20 px-4 py-3 text-emerald-100 shadow-[0_18px_45px_rgba(16,185,129,0.18)]">
-                  <span className="mt-1 flex h-3 w-3 rounded-full bg-white/80" aria-hidden />
-                  <p className="text-xs leading-relaxed text-emerald-50 sm:text-sm">
-                    I’m a virtual companion for everyday care—not a substitute for emergency services or licensed clinicians. If you
-                    feel unsafe or notice severe symptoms, please seek urgent medical attention immediately.
+            {messages.length === 0 && (
+              <section className="relative overflow-hidden rounded-[30px] border border-white/10 bg-slate-900/60 px-5 py-6 shadow-[0_35px_90px_rgba(15,23,42,0.65)] backdrop-blur-xl sm:px-6 lg:px-8">
+                <div
+                  className="absolute inset-y-0 right-0 w-[55%] opacity-60 blur-3xl bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500"
+                  aria-hidden
+                />
+                <div className="relative flex flex-col gap-5">
+                  <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.32em] text-emerald-300/80">
+                    <span className="flex h-2 w-2 rounded-full bg-emerald-400" aria-hidden />
+                    Ready when you are
+                  </div>
+                  <h2 className="text-3xl font-bold text-white sm:text-4xl lg:text-5xl">
+                    How can I care for you today?
+                  </h2>
+                  <p className="max-w-3xl text-sm leading-relaxed text-slate-200 sm:text-base">
+                    Share what's on your mind—symptoms you're noticing, questions about self-care, or worries about emergencies. I'll
+                    help you navigate next steps with calm, clinically aligned guidance.
                   </p>
+                  <div className="w-full max-w-4xl">
+                    <TopicSuggestions
+                      onSuggestionSelect={(prompt) => {
+                        void handleSend(prompt);
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-start gap-3 rounded-2xl border border-emerald-400/40 bg-gradient-to-r from-emerald-500/20 via-green-500/10 to-teal-500/20 px-4 py-3 text-emerald-100 shadow-[0_18px_45px_rgba(16,185,129,0.18)]">
+                    <span className="mt-1 flex h-3 w-3 rounded-full bg-white/80" aria-hidden />
+                    <p className="text-xs leading-relaxed text-emerald-50 sm:text-sm">
+                      I'm a virtual companion for everyday care—not a substitute for emergency services or licensed clinicians. If you
+                      feel unsafe or notice severe symptoms, please seek urgent medical attention immediately.
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </section>
+              </section>
+            )}
 
             <section className="relative overflow-hidden flex-1 rounded-[28px] border border-white/10 bg-slate-900/55 shadow-[0_35px_90px_rgba(15,23,42,0.65)] backdrop-blur-xl">
               <div
@@ -1183,7 +1278,8 @@ export default function Home() {
         </div>
       )}
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
