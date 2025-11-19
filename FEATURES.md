@@ -4,16 +4,17 @@ This document outlines the core features of the Healthcare Chatbot application t
 
 ---
 
-## 1. Hybrid RAG (Retrieval Augmented Generation) with ChromaDB
+## 1. Hybrid RAG (Retrieval Augmented Generation) with ChromaDB & Conversation Context
 
 ### What is the feature about?
 
-The application uses a **Vector-based RAG system** powered by ChromaDB to retrieve relevant healthcare knowledge from a curated database of 110+ markdown files covering various medical domains. The system converts medical content into vector embeddings and performs semantic search to find the most relevant information for user queries.
+The application uses a **Vector-based RAG system** powered by ChromaDB to retrieve relevant healthcare knowledge from a curated database of 110+ markdown files covering various medical domains. The system converts medical content into vector embeddings and performs semantic search to find the most relevant information for user queries. **Enhanced with conversation context awareness** - the system uses previous conversation history to improve search queries for follow-up questions.
 
 ### Why we need that feature?
 
 - **Accuracy**: Provides evidence-based responses from verified medical sources (WHO, NHS, ICMR)
 - **Context-Aware**: Retrieves relevant context before generating responses, ensuring answers are grounded in actual medical knowledge
+- **Conversation Continuity**: Maintains context across chat sessions for better follow-up question understanding
 - **Scalability**: Can handle thousands of medical documents efficiently through vector similarity search
 - **Source Attribution**: Maintains citations and source references for transparency and trust
 
@@ -32,36 +33,59 @@ The application uses a **Vector-based RAG system** powered by ChromaDB to retrie
    - Collection name: `medical_knowledge`
    - Embeds document chunks using ChromaDB's default embedding model
    - Stores metadata (source, topic, category) alongside vectors
+   - **Client and collection cached** to avoid re-initialization overhead
 
-3. **Retrieval Process** (`api/rag/retriever.py`):
+3. **Retrieval Process with Context Enhancement** (`api/rag/retriever.py`, `api/main.py`):
    ```python
-   def retrieve(query: str, k: int = 4) -> List[Dict[str, str]]:
-       # Initialize ChromaDB client
-       chroma_client = chromadb.PersistentClient(path=chroma_path)
-       collection = chroma_client.get_collection("medical_knowledge")
+   def _enhance_search_query_with_context(current_query: str, conversation_history: List[Dict]) -> str:
+       # Detect follow-up questions (short, uses pronouns)
+       follow_up_indicators = ["this", "that", "it", "these", "when should", "how long"]
+       is_follow_up = any(indicator in current_query.lower() for indicator in follow_up_indicators)
        
-       # Semantic search
+       if is_follow_up:
+           # Extract key terms from previous messages
+           key_terms = extract_key_terms_from_history(conversation_history)
+           # Enhance query: "when should I see a doctor?" + "fever" → "when should I see a doctor fever"
+           return f"{current_query} {' '.join(key_terms)}"
+       return current_query
+   
+   def retrieve(query: str, k: int = 4) -> List[Dict[str, str]]:
+       # Use cached ChromaDB client
+       collection = _chroma_collection
+       
+       # Semantic search with enhanced query
        results = collection.query(
-           query_texts=[query],
+           query_texts=[enhanced_query],
            n_results=k
        )
        
        # Returns: chunk text, source, topic, id
    ```
 
-4. **Integration with LLM**:
+4. **Conversation History Integration**:
+   - Previous messages retrieved from database for each session
+   - Conversation history passed to LLM for context understanding
+   - Enhanced search queries combine current question with conversation context
+   - Follow-up questions automatically understand previous conversation topics
+
+5. **Integration with LLM**:
    - Retrieved chunks are passed as context to the LLM
+   - Conversation history included in LLM prompt for context awareness
    - LLM generates responses strictly based on provided context
    - Citations are included in responses for transparency
+   - **Detailed, structured responses** covering: understanding the concern, causes, solutions, and when to seek medical attention
 
 ### Advantages of using this feature?
 
 - ✅ **Evidence-Based Responses**: All answers are grounded in verified medical sources
 - ✅ **Fast Semantic Search**: Vector similarity search is much faster than keyword matching
 - ✅ **Handles Complex Queries**: Understands intent and meaning, not just keywords
+- ✅ **Conversation Context**: Follow-up questions automatically understand previous conversation
+- ✅ **Enhanced Retrieval**: Context-aware search queries improve relevance for follow-ups
 - ✅ **Maintainable**: Easy to add new medical content by rebuilding the index
 - ✅ **Transparent**: Provides source citations for every response
 - ✅ **Domain-Specific**: Organized by medical specialties for better organization
+- ✅ **Performance Optimized**: Cached ChromaDB client reduces initialization overhead
 
 ---
 
@@ -497,11 +521,11 @@ A **persistent PostgreSQL connection pool** using asyncpg that maintains active 
 
 ---
 
-## 8. Secure Authentication with JWT & HTTP-Only Cookies
+## 8. Secure Authentication with JWT & Activity-Based Session Management
 
 ### What is the feature about?
 
-A **secure authentication system** using JWT (JSON Web Tokens) stored in HTTP-only cookies for session management. The system includes user registration, login, password hashing (SHA-256 + salt), refresh tokens, and role-based access control (admin/user).
+A **secure authentication system** using JWT (JSON Web Tokens) stored in HTTP-only cookies for session management. The system includes user registration, login, password hashing (SHA-256 + salt), refresh tokens, **activity-based token expiration (12-hour inactivity)**, and intelligent routing that automatically redirects users based on their authentication status.
 
 ### Why we need that feature?
 
@@ -509,6 +533,8 @@ A **secure authentication system** using JWT (JSON Web Tokens) stored in HTTP-on
 - **Compliance**: Meets healthcare data protection requirements
 - **User Management**: Enables personalized experiences and session tracking
 - **Access Control**: Role-based permissions for admin features
+- **User Experience**: Automatic routing prevents unauthorized access and improves UX
+- **Session Security**: Activity-based expiration ensures inactive sessions are automatically terminated
 
 ### How we have implemented that feature in detail?
 
@@ -526,7 +552,8 @@ A **secure authentication system** using JWT (JSON Web Tokens) stored in HTTP-on
 
 2. **JWT Token Generation** (`api/auth/jwt.py`):
    ```python
-   # Access token (30 min expiry)
+   # Access token (7 days expiry - frontend handles 12-hour activity-based expiration)
+   # The 7-day expiry is just a safety maximum - frontend's 12-hour inactivity check is the real expiration
    access_token = create_access_token({
        "sub": user_id,
        "email": email,
@@ -543,21 +570,76 @@ A **secure authentication system** using JWT (JSON Web Tokens) stored in HTTP-on
        key="access_token",
        value=access_token,
        httponly=True,  # JavaScript cannot access
-       secure=IS_PRODUCTION,  # HTTPS only in production
-       samesite="lax",
-       max_age=30 * 60
+       secure=SECURE_COOKIE,  # HTTPS in production/cross-origin
+       samesite="none",  # Cross-origin support
+       max_age=7 * 24 * 60 * 60  # 7 days (frontend handles 12-hour activity expiration)
    )
    ```
 
-4. **Middleware Protection** (`api/auth/middleware.py`):
+4. **Activity-Based Expiration** (`frontend/utils/auth.ts`):
+   ```typescript
+   // Track last activity timestamp
+   const AUTH_LAST_ACTIVITY_KEY = 'health_companion_last_activity';
+   const INACTIVITY_EXPIRY_MS = 12 * 60 * 60 * 1000; // 12 hours
+   
+   // Update activity on user interactions
+   export function updateActivity(): void {
+       localStorage.setItem(AUTH_LAST_ACTIVITY_KEY, Date.now().toString());
+   }
+   
+   // Check if token expired due to inactivity
+   export function isAuthenticated(): boolean {
+       const lastActivity = parseInt(localStorage.getItem(AUTH_LAST_ACTIVITY_KEY));
+       const timeSinceActivity = Date.now() - lastActivity;
+       
+       if (timeSinceActivity >= INACTIVITY_EXPIRY_MS) {
+           clearAuth(); // Expire token
+           return false;
+       }
+       return true;
+   }
+   ```
+
+5. **Activity Tracking**:
+   - **User Interactions**: Typing, clicking, scrolling (throttled to once per second)
+   - **API Calls**: All successful API requests update activity timestamp
+   - **Message Sending**: Chat messages update activity
+   - **Page Navigation**: Mount events update activity
+
+6. **Intelligent Routing** (`frontend/app/auth/page.tsx`, `frontend/app/page.tsx`):
+   ```typescript
+   // Auth page: Redirect authenticated users to main chat
+   useEffect(() => {
+       if (isAuthenticated()) {
+           router.push('/'); // Redirect to main chat
+       }
+   }, [router]);
+   
+   // Main chat: Redirect unauthenticated/expired users to auth
+   useEffect(() => {
+       if (!isAuthenticated()) {
+           sessionStorage.setItem('authExpired', 'true');
+           router.push('/auth'); // Redirect with expiration message
+       }
+   }, [router]);
+   ```
+
+7. **Logout Functionality**:
+   ```typescript
+   // Clear all auth data and redirect to landing
+   clearAuth(); // Removes tokens, user data, activity tracking
+   router.push('/landing');
+   ```
+
+8. **Middleware Protection** (`api/auth/middleware.py`):
    ```python
    async def require_auth(request: Request):
-       # Extract token from cookie
+       # Extract token from HTTP-only cookie
        # Verify JWT signature
        # Return user data or raise 401
    ```
 
-5. **Database Integration**:
+9. **Database Integration**:
    - User credentials stored in NeonDB
    - Refresh tokens stored in `refresh_tokens` table
    - Token revocation on logout
@@ -565,19 +647,142 @@ A **secure authentication system** using JWT (JSON Web Tokens) stored in HTTP-on
 ### Advantages of using this feature?
 
 - ✅ **Security**: HTTP-only cookies prevent XSS attacks
+- ✅ **Activity-Based Expiration**: Tokens expire after 12 hours of inactivity (not fixed time)
+- ✅ **Intelligent Routing**: Automatic redirects prevent unauthorized access
+- ✅ **User Experience**: Seamless navigation with proper authentication flow
 - ✅ **Compliance**: Meets healthcare data protection standards
 - ✅ **User Management**: Enables personalized experiences
 - ✅ **Session Tracking**: Maintains user sessions across requests
 - ✅ **Access Control**: Role-based permissions for admin features
 - ✅ **Scalable**: Stateless JWT tokens work across multiple servers
+- ✅ **Cross-Origin Support**: Works with frontend and backend on different domains
 
 ---
 
-## 9. Chat History & Session Management
+## 9. Real-Time Streaming Responses with Background Queue System
 
 ### What is the feature about?
 
-A **comprehensive chat history system** that stores all user conversations, messages, and metadata in NeonDB. The system tracks chat sessions, message threads, safety flags, citations, and provides APIs for retrieving conversation history.
+A **streaming chat system** that delivers AI responses in real-time using Server-Sent Events (SSE), providing a typewriter effect for better user experience. The system uses FastAPI's `BackgroundTasks` to queue database writes **after** the response is streamed to the user, ensuring fast response times while maintaining data persistence.
+
+### Why we need that feature?
+
+- **User Experience**: Real-time streaming creates an engaging, responsive chat experience
+- **Performance**: Users see responses immediately as they're generated, not after full completion
+- **Efficiency**: Database writes happen in background, not blocking the response stream
+- **Scalability**: Background tasks allow handling multiple concurrent requests efficiently
+- **Data Integrity**: All messages are still saved to database, just asynchronously
+
+### How we have implemented that feature in detail?
+
+**Streaming Architecture:**
+
+1. **Server-Sent Events (SSE)** (`api/main.py`):
+   ```python
+   @app.post("/chat/stream")
+   async def chat_stream(
+       request: ChatRequest,
+       background_tasks: BackgroundTasks,
+       user: dict = Depends(require_auth)
+   ):
+       async def generate():
+           full_answer = ""
+           async for chunk_data in process_chat_request_stream(...):
+               yield chunk_data  # Stream each chunk immediately
+               # Build full answer from chunks
+               if chunk_data.startswith("data: "):
+                   data = json.loads(chunk_data[6:])
+                   if data.get("type") == "chunk":
+                       full_answer += data.get("content", "")
+           
+           # Queue DB write AFTER streaming completes
+           background_tasks.add_task(
+               save_chat_messages_background,
+               session_id, customer_id, user_message, response_obj
+           )
+       
+       return StreamingResponse(
+           generate(),
+           media_type="text/event-stream",
+           headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+       )
+   ```
+
+2. **Chunk-by-Chunk Streaming**:
+   - AI response generated incrementally
+   - Each chunk sent immediately to frontend
+   - Frontend displays chunks as they arrive (typewriter effect)
+   - No waiting for complete response
+
+3. **Background Queue System**:
+   ```python
+   async def save_chat_messages_background(
+       session_id: str,
+       customer_id: str,
+       user_message: str,
+       assistant_response: ChatResponse,
+   ):
+       # This runs AFTER response is streamed to user
+       # Saves both user message and assistant response
+       await db_service.save_chat_message(...)
+       
+       # Invalidate cache after saving
+       await cache_service.delete(f"sessions:{customer_id}:*")
+   ```
+
+4. **Frontend Integration** (`frontend/app/page.tsx`):
+   ```typescript
+   const response = await fetch('/api/chat/stream', {
+       method: 'POST',
+       body: JSON.stringify(request),
+   });
+   
+   const reader = response.body.getReader();
+   const decoder = new TextDecoder();
+   
+   while (true) {
+       const { done, value } = await reader.read();
+       if (done) break;
+       
+       const chunk = decoder.decode(value);
+       // Parse SSE format: "data: {...}\n\n"
+       const lines = chunk.split('\n');
+       for (const line of lines) {
+           if (line.startsWith('data: ')) {
+               const data = JSON.parse(line.slice(6));
+               if (data.type === 'chunk') {
+                   setMessage(prev => prev + data.content); // Typewriter effect
+               }
+           }
+       }
+   }
+   ```
+
+5. **Response Flow**:
+   - User sends message → Request received
+   - AI starts generating → First chunk sent immediately
+   - Chunks streamed in real-time → User sees response building
+   - Final chunk sent → Streaming completes
+   - **Background task queued** → DB write happens asynchronously
+   - Cache invalidated → Ensures fresh data on next request
+
+### Advantages of using this feature?
+
+- ✅ **Fast Response Times**: Users see responses immediately (no waiting for DB writes)
+- ✅ **Better UX**: Typewriter effect creates engaging, responsive experience
+- ✅ **Scalability**: Background tasks handle DB writes without blocking requests
+- ✅ **Data Persistence**: All messages still saved to database (just asynchronously)
+- ✅ **Efficient**: Database writes don't slow down response delivery
+- ✅ **Real-Time**: Users see AI thinking and responding in real-time
+- ✅ **Production-Ready**: Uses FastAPI's built-in BackgroundTasks for reliability
+
+---
+
+## 10. Chat History & Session Management
+
+### What is the feature about?
+
+A **comprehensive chat history system** that stores all user conversations, messages, and metadata in NeonDB. The system tracks chat sessions, message threads, safety flags, citations, and provides APIs for retrieving conversation history. **Enhanced with streaming support** - messages are saved to database via background queue after streaming completes.
 
 ### Why we need that feature?
 
@@ -647,9 +852,195 @@ A **comprehensive chat history system** that stores all user conversations, mess
 
 ---
 
+---
+
+## 11. User Authentication & Authorization Flow
+
+### What is needed to keep users logged in and authorized?
+
+This section explains the complete authentication and authorization system that keeps users logged in and ensures they can access protected resources.
+
+### Components Required for User Login & Authorization:
+
+#### 1. **Frontend Authentication State** (`frontend/utils/auth.ts`)
+
+**Storage Keys:**
+- `health_companion_auth`: Stores "authenticated" flag
+- `health_companion_user`: Stores user data (email, fullName, createdAt)
+- `health_companion_last_activity`: Stores last activity timestamp (for 12-hour inactivity expiration)
+
+**Functions:**
+```typescript
+// Set authentication state (called on login/signup)
+setAuth(user: AuthUser): void
+  - Stores "authenticated" flag
+  - Stores user data
+  - Records current timestamp as last activity
+
+// Check if user is authenticated
+isAuthenticated(): boolean
+  - Checks if auth flag exists
+  - Verifies last activity was within 12 hours
+  - Returns false and clears auth if expired
+
+// Update activity timestamp (called on user interactions)
+updateActivity(): void
+  - Updates last activity timestamp
+  - Prevents token expiration during active use
+
+// Clear all authentication data (called on logout)
+clearAuth(): void
+  - Removes all auth-related localStorage items
+```
+
+#### 2. **Backend JWT Tokens** (`api/auth/jwt.py`, `api/auth/routes.py`)
+
+**Token Storage:**
+- **Access Token**: Stored in HTTP-only cookie `access_token`
+  - Expires: 7 days (frontend handles 12-hour activity-based expiration - JWT expiry is just a safety maximum)
+  - Contains: user_id, email, role
+  - Secure: HTTP-only, SameSite=None for cross-origin, Secure flag in production
+  - **Note**: The frontend's 12-hour inactivity check is the REAL expiration. The 7-day JWT expiry won't interfere.
+
+- **Refresh Token**: Stored in HTTP-only cookie `refresh_token`
+  - Expires: 7 days
+  - Used for token refresh when access token expires
+
+**Token Generation:**
+```python
+# On login/signup
+access_token = create_access_token({
+    "sub": user_id,
+    "email": email,
+    "role": role
+})
+
+# Set in HTTP-only cookie
+response.set_cookie(
+    key="access_token",
+    value=access_token,
+    httponly=True,
+    secure=SECURE_COOKIE,
+    samesite="none",
+    max_age=24 * 60 * 60
+)
+```
+
+#### 3. **Activity Tracking System**
+
+**What Updates Activity:**
+- ✅ User typing in chat input
+- ✅ User clicking anywhere on page
+- ✅ User scrolling
+- ✅ User sending messages
+- ✅ Successful API calls (via axios interceptor)
+- ✅ Page mount/navigation
+
+**Activity Expiration:**
+- Token expires if **no activity for 12 hours**
+- Activity timestamp updated on every user interaction
+- Throttled to update max once per second to avoid excessive writes
+
+#### 4. **Routing Protection** (`frontend/app/auth/page.tsx`, `frontend/app/page.tsx`)
+
+**Auth Page (`/auth`):**
+- Checks if user is authenticated
+- If authenticated → Redirects to main chat (`/`)
+- If not authenticated → Shows login/signup form
+- Shows expiration message if redirected due to expired token
+
+**Main Chat Page (`/`):**
+- Checks if user is authenticated
+- If not authenticated → Redirects to `/auth` with expiration message
+- If authenticated → Loads chat interface
+- Updates activity on mount
+
+**Landing Page (`/landing`):**
+- Public access (no authentication required)
+- Users can view features and navigate to auth
+
+#### 5. **API Request Authentication** (`api/auth/middleware.py`)
+
+**Protected Endpoints:**
+- `/chat` - Chat endpoint
+- `/chat/stream` - Streaming chat endpoint
+- `/customer/{id}/sessions` - Session list
+- `/session/{id}/messages` - Message retrieval
+- All endpoints requiring `require_auth` dependency
+
+**Authentication Check:**
+```python
+async def get_current_user(request: Request):
+    # Extract token from HTTP-only cookie
+    token = request.cookies.get("access_token")
+    
+    # Verify JWT signature and expiration
+    payload = verify_token(token, token_type="access")
+    
+    # Return user data or None
+    return {
+        "user_id": payload.get("sub"),
+        "email": payload.get("email"),
+        "role": payload.get("role")
+    }
+```
+
+#### 6. **Logout Process**
+
+**Frontend Logout:**
+```typescript
+clearAuth();  // Clears all localStorage items
+router.push('/landing');  // Redirects to landing page
+```
+
+**Backend Logout:**
+- Refresh token revoked in database
+- Cookies cleared (handled by frontend redirect)
+
+### Complete Authentication Flow:
+
+1. **User Registration/Login:**
+   - User submits credentials → Backend validates
+   - Backend creates JWT tokens → Sets HTTP-only cookies
+   - Frontend calls `setAuth(user)` → Stores auth state + activity timestamp
+   - User redirected to main chat
+
+2. **Staying Logged In:**
+   - User interacts with app → `updateActivity()` called
+   - Activity timestamp updated in localStorage
+   - Token remains valid as long as activity < 12 hours old
+   - JWT token in cookie remains valid for 7 days (but frontend's 12-hour check is the limiting factor)
+
+3. **Accessing Protected Routes:**
+   - Frontend checks `isAuthenticated()` → Verifies activity < 12 hours
+   - If valid → User can access route
+   - If expired → Redirects to `/auth` with message
+   - Backend verifies JWT token in cookie → Returns user data or 401
+
+4. **Token Expiration:**
+   - **Activity-Based (REAL expiration)**: No activity for 12 hours → Frontend clears auth → Redirects to `/auth`
+   - **JWT Expiration (Safety maximum)**: Token expires after 7 days → Backend returns 401 → Frontend redirects to `/auth` (unlikely to happen since frontend logs out after 12 hours)
+
+5. **Logout:**
+   - User clicks logout → `clearAuth()` called
+   - All localStorage cleared
+   - User redirected to landing page
+   - Backend revokes refresh token
+
+### Key Points:
+
+- ✅ **Two-Layer Security**: Frontend activity tracking + Backend JWT validation
+- ✅ **HTTP-Only Cookies**: Tokens stored in secure cookies (not accessible to JavaScript)
+- ✅ **Activity-Based Expiration**: Tokens expire after 12 hours of inactivity (not fixed time)
+- ✅ **Automatic Routing**: System automatically redirects based on auth status
+- ✅ **Cross-Origin Support**: Works with frontend and backend on different domains
+- ✅ **Secure by Default**: All tokens use secure flags and proper SameSite policies
+
+---
+
 ## Summary
 
-These 9 core features form the foundation of a production-ready, scalable, and secure healthcare chatbot application. Each feature adds significant value and weightage to the project, demonstrating:
+These 10 core features (plus authentication flow documentation) form the foundation of a production-ready, scalable, and secure healthcare chatbot application. Each feature adds significant value and weightage to the project, demonstrating:
 
 - **Technical Excellence**: Modern architecture with best practices
 - **Healthcare Focus**: Domain-specific features for medical use cases
@@ -657,6 +1048,7 @@ These 9 core features form the foundation of a production-ready, scalable, and s
 - **Security**: Enterprise-grade authentication and data protection
 - **Reliability**: Fallback systems and health monitoring
 - **Performance**: Caching and connection pooling for optimal speed
+- **User Experience**: Intelligent routing and context-aware conversations
 
 The combination of these features creates a comprehensive healthcare assistant that is both technically robust and user-friendly.
 

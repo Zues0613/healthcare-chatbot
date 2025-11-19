@@ -19,8 +19,10 @@ if not JWT_SECRET_KEY:
     logger.warning("JWT_SECRET_KEY not set, using generated key. Set JWT_SECRET_KEY in environment for production!")
 
 JWT_ALGORITHM = "HS256"
-# Access token expires after 4 hours of inactivity (longer for active sessions)
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "240"))  # 4 hours default
+# Access token expiration (set to 7 days - frontend handles activity-based expiration)
+# Frontend enforces 12-hour inactivity expiration - this JWT expiry is just a maximum safety limit
+# The frontend's 12-hour inactivity check will always be the limiting factor
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))  # 7 days default (10080 minutes)
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
 # Security scheme for HTTP-only cookies

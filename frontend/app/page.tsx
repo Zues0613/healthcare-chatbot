@@ -3,8 +3,8 @@
 import clsx from 'clsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiClient } from '../utils/api';
-import { isAuthenticated, clearAuth, getAuthUser } from '../utils/auth';
+import { apiClient, API_BASE } from '../utils/api';
+import { isAuthenticated, clearAuth, getAuthUser, updateActivity } from '../utils/auth';
 import {
   AlertTriangle,
   Check,
@@ -300,10 +300,18 @@ export default function Home() {
 
   // Check authentication on mount and get user info
   useEffect(() => {
+    // Check if token has expired
     if (!isAuthenticated()) {
-      router.push('/landing');
+      // Token expired or not authenticated, redirect to auth with message
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('authExpired', 'true');
+      }
+      router.push('/auth');
     } else {
       setIsAuthChecked(true);
+      // Update activity on mount (user is active)
+      updateActivity();
+      
       // Get customer ID from user info (with browser cache)
       const fetchUserInfo = async () => {
         try {
@@ -359,6 +367,32 @@ export default function Home() {
       return () => clearTimeout(timer);
     }
   }, [router]);
+
+  // Track user activity on various interactions
+  useEffect(() => {
+    if (!isAuthChecked) return;
+    
+    // Throttle to avoid excessive updates (update max once per second)
+    let lastUpdate = 0;
+    const throttledUpdate = () => {
+      const now = Date.now();
+      if (now - lastUpdate > 1000) { // Update max once per second
+        updateActivity();
+        lastUpdate = now;
+      }
+    };
+    
+    // Track activity on mouse movements, clicks, keyboard input
+    window.addEventListener('mousedown', throttledUpdate);
+    window.addEventListener('keydown', throttledUpdate);
+    window.addEventListener('scroll', throttledUpdate, { passive: true });
+    
+    return () => {
+      window.removeEventListener('mousedown', throttledUpdate);
+      window.removeEventListener('keydown', throttledUpdate);
+      window.removeEventListener('scroll', throttledUpdate);
+    };
+  }, [isAuthChecked]);
 
   // Load chat sessions when customerId is available
   useEffect(() => {
@@ -464,6 +498,8 @@ export default function Home() {
     const messageText = (overrides ?? inputValue).trim();
     if (!messageText || isLoading) return;
 
+    // Update activity timestamp on send
+    updateActivity();
     setHasInteracted(true);
 
     const userMessage: ChatEntry = {
@@ -479,48 +515,137 @@ export default function Home() {
     setError(null);
 
     try {
-      const response = await apiClient.post('/chat', {
-        text: messageText,
-        lang,
-        profile,
-        session_id: currentSessionId, // Include current session ID to maintain context
-      });
-
+      // Create assistant message placeholder for streaming
+      const assistantMessageId = createId();
       const assistantMessage: ChatEntry = {
-        id: createId(),
+        id: assistantMessageId,
         role: 'assistant',
-        content: response.data.answer,
+        content: '',
         timestamp: formatTimestamp(),
-        citations: Array.isArray(response.data.citations) ? response.data.citations : (response.data.citations ? [response.data.citations] : []),
-        facts: response.data.facts,
-        safety: response.data.safety,
+        citations: [],
+        facts: [],
+        safety: undefined,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
 
-      // Update current session ID from response if provided
-      if (response.data.metadata?.session_id) {
-        setCurrentSessionId(response.data.metadata.session_id);
+      // Get API base URL
+      const apiBaseUrl = API_BASE;
+      
+      // Create request body
+      const requestBody = {
+        text: messageText,
+        lang,
+        profile,
+        session_id: currentSessionId,
+      };
+
+      // Use fetch for Server-Sent Events (SSE) streaming
+      // Get auth token from cookies (apiClient handles this automatically)
+      const response = await fetch(`${apiBaseUrl}/chat/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        } as Record<string, string>, // Explicit type for TypeScript
+        credentials: 'include', // Important for cookie-based auth
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // Reload chat sessions after sending a message
-      if (customerId) {
-        // Clear browser cache to force refresh
-        try {
-          const cacheKey = `chat_sessions_${customerId}`;
-          localStorage.removeItem(cacheKey);
-        } catch (err) {
-          console.warn('Error clearing cache:', err);
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let accumulatedContent = '';
+
+      if (!reader) {
+        throw new Error('Response body is not readable');
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.type === 'chunk') {
+                // Append chunk to accumulated content
+                accumulatedContent += data.content || '';
+                
+                // Update the message in real-time (typewriter effect)
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessageId
+                      ? { ...msg, content: accumulatedContent }
+                      : msg
+                  )
+                );
+              } else if (data.type === 'translated') {
+                // Replace with translated content
+                accumulatedContent = data.content || accumulatedContent;
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessageId
+                      ? { ...msg, content: accumulatedContent }
+                      : msg
+                  )
+                );
+              } else if (data.type === 'done') {
+                // Final message with metadata
+                const finalContent = data.answer || accumulatedContent;
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessageId
+                      ? {
+                          ...msg,
+                          content: finalContent,
+                          citations: Array.isArray(data.citations) ? data.citations : (data.citations ? [data.citations] : []),
+                          facts: data.facts || [],
+                          safety: data.safety,
+                        }
+                      : msg
+                  )
+                );
+
+                // Update session ID if provided
+                if (data.metadata?.session_id) {
+                  setCurrentSessionId(data.metadata.session_id);
+                }
+
+                // Reload chat sessions after receiving response
+                if (customerId) {
+                  try {
+                    const cacheKey = `chat_sessions_${customerId}`;
+                    localStorage.removeItem(cacheKey);
+                  } catch (err) {
+                    console.warn('Error clearing cache:', err);
+                  }
+                  loadChatSessions(customerId);
+                }
+
+                // Text-to-speech for final answer
+                if (typeof window !== 'undefined' && 'speechSynthesis' in window && narrationEnabled) {
+                  const utterance = new SpeechSynthesisUtterance(finalContent);
+                  utterance.lang = LANGUAGE_SPEECH_MAP[lang] ?? 'en-US';
+                  utterance.rate = 0.92;
+                  window.speechSynthesis.speak(utterance);
+                }
+              }
+            } catch (parseError) {
+              console.warn('Error parsing SSE data:', parseError);
+            }
+          }
         }
-        // Reload sessions - function is stable (useCallback), safe to call directly
-        loadChatSessions(customerId);
-      }
-
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window && narrationEnabled) {
-        const utterance = new SpeechSynthesisUtterance(response.data.answer);
-        utterance.lang = LANGUAGE_SPEECH_MAP[lang] ?? 'en-US';
-        utterance.rate = 0.92;
-        window.speechSynthesis.speak(utterance);
       }
     } catch (err) {
       console.error('Chat error', err);
@@ -718,6 +843,7 @@ export default function Home() {
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    updateActivity(); // Update activity on key press
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       void handleSend();
@@ -1025,6 +1151,7 @@ export default function Home() {
             type="button"
             onClick={() => {
               clearAuth();
+              // Clear all auth-related data and redirect to landing
               router.push('/landing');
             }}
             className="mt-2 flex w-full items-center gap-3 rounded-lg border border-white/10 bg-slate-800/50 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-red-400/50 hover:bg-slate-800/70 hover:text-red-200"
@@ -1380,8 +1507,14 @@ export default function Home() {
             <div className="relative flex-1 min-w-0">
               <textarea
                 value={inputValue}
-                onChange={(event) => setInputValue(event.target.value)}
-                onKeyDown={handleKeyDown}
+                onChange={(event) => {
+                  setInputValue(event.target.value);
+                  updateActivity(); // Update activity on typing
+                }}
+                onKeyDown={(event) => {
+                  updateActivity(); // Update activity on key press
+                  handleKeyDown(event);
+                }}
                 placeholder={selectedPlaceholder}
                 rows={2}
                 className="min-h-[60px] w-full resize-none rounded-xl border border-white/10 bg-transparent px-3 py-2 text-xs leading-relaxed text-slate-100 shadow-inner shadow-black/20 transition placeholder:text-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400/80 sm:min-h-[80px] sm:rounded-2xl sm:px-4 sm:py-3 sm:text-sm sm:rows-3"

@@ -126,8 +126,7 @@ class CacheService:
                     else:
                         raise Exception("Upstash Redis connection test failed")
                 else:
-                    logger.warning("UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN not found in environment")
-                    logger.info("Trying fallback to standard redis with REDIS_URI...")
+                    logger.debug("UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN not found in environment, trying fallback to standard Redis with REDIS_URI...")
             
             # Fallback to standard redis with REDIS_URI
             redis_uri = os.getenv("REDIS_URI")

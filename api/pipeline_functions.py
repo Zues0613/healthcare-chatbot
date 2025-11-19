@@ -4,7 +4,7 @@ Pipeline functions for the multilingual healthcare chatbot
 
 import json
 import logging
-from typing import Dict, Optional, Tuple, Any
+from typing import Dict, Optional, Tuple, Any, List
 from openai import OpenAI
 from openai import APIError, RateLimitError
 
@@ -265,6 +265,99 @@ def detect_and_translate_to_english(
     return detected_lang, english_text
 
 
+async def generate_final_answer_stream(
+    client: OpenAI,
+    model: str,
+    user_question: str,
+    rag_context: str,
+    facts: list,
+    profile: Any,
+    conversation_history: Optional[List[Dict[str, str]]] = None,
+    retry_count: int = 3
+):
+    """
+    Generate final answer in English using GPT-4o-mini with RAG context and facts (STREAMING VERSION)
+    
+    Args:
+        client: OpenAI client
+        model: Model name (should be gpt-4o-mini)
+        user_question: User's question in English
+        rag_context: Context from ChromaDB RAG
+        facts: Facts from Neo4j/graph database
+        profile: User profile object
+        conversation_history: Previous conversation messages for context (list of {"role": "user"/"assistant", "content": "..."})
+        retry_count: Number of retries on failure
+        
+    Yields:
+        Text chunks as they are generated
+    """
+    facts_context = format_facts_context(facts)
+    user_profile_str = format_user_profile(profile)
+    
+    # Format RAG context - if empty, clearly indicate no information available
+    if not rag_context or rag_context.strip() == "":
+        formatted_rag_context = "⚠️ NO INFORMATION AVAILABLE IN KNOWLEDGE BASE: The knowledge base does not contain any relevant information for this query."
+    else:
+        formatted_rag_context = rag_context
+    
+    prompt = REASONING_ANSWER_PROMPT.format(
+        rag_context=formatted_rag_context,
+        facts_context=facts_context or "No specific facts from database.",
+        user_question=user_question,
+        user_profile=user_profile_str
+    )
+    
+    # Build messages array with conversation history
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a knowledgeable, empathetic healthcare assistant. For medical facts, use ONLY the indexed knowledge base provided in the context. For understanding follow-up questions, use conversation history to understand what the user is asking about. Once you understand the question from conversation history, use the knowledge base context to provide factual medical information. Never make up or invent medical facts. Always give thorough responses when context is available, covering understanding the concern, causes, solutions, and when to seek medical attention."
+        }
+    ]
+    
+    # Add conversation history if provided
+    if conversation_history:
+        # Limit to last 10 messages to avoid token limits
+        recent_history = conversation_history[-10:] if len(conversation_history) > 10 else conversation_history
+        messages.extend(recent_history)
+        logger.debug(f"Including {len(recent_history)} previous messages for context")
+    
+    # Add current user question
+    messages.append({
+        "role": "user",
+        "content": prompt
+    })
+    
+    for attempt in range(retry_count):
+        try:
+            stream = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=2000,  # Increased for detailed, comprehensive responses
+                temperature=0.7,
+                stream=True,  # Enable streaming
+            )
+            
+            for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    yield content
+            
+            return  # Successfully completed
+            
+        except Exception as e:
+            logger.warning(f"Error in generate_final_answer_stream (attempt {attempt + 1}): {e}")
+            if attempt < retry_count - 1:
+                import asyncio
+                await asyncio.sleep(1)
+            else:
+                logger.error(f"Failed to generate answer after {retry_count} attempts")
+                yield "I apologize, but I encountered an error processing your request. Please try again."
+                return
+    
+    yield "I apologize, but I encountered an error processing your request. Please try again."
+
+
 def generate_final_answer(
     client: OpenAI,
     model: str,
@@ -272,6 +365,7 @@ def generate_final_answer(
     rag_context: str,
     facts: list,
     profile: Any,
+    conversation_history: Optional[List[Dict[str, str]]] = None,
     retry_count: int = 3
 ) -> str:
     """
@@ -284,6 +378,7 @@ def generate_final_answer(
         rag_context: Context from ChromaDB RAG
         facts: Facts from Neo4j/graph database
         profile: User profile object
+        conversation_history: Previous conversation messages for context (list of {"role": "user"/"assistant", "content": "..."})
         retry_count: Number of retries on failure
         
     Returns:
@@ -292,28 +387,46 @@ def generate_final_answer(
     facts_context = format_facts_context(facts)
     user_profile_str = format_user_profile(profile)
     
+    # Format RAG context - if empty, clearly indicate no information available
+    if not rag_context or rag_context.strip() == "":
+        formatted_rag_context = "⚠️ NO INFORMATION AVAILABLE IN KNOWLEDGE BASE: The knowledge base does not contain any relevant information for this query."
+    else:
+        formatted_rag_context = rag_context
+    
     prompt = REASONING_ANSWER_PROMPT.format(
-        rag_context=rag_context or "No additional context available.",
+        rag_context=formatted_rag_context,
         facts_context=facts_context or "No specific facts from database.",
         user_question=user_question,
         user_profile=user_profile_str
     )
     
+    # Build messages array with conversation history
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a knowledgeable, empathetic healthcare assistant. For medical facts, use ONLY the indexed knowledge base provided in the context. For understanding follow-up questions, use conversation history to understand what the user is asking about. Once you understand the question from conversation history, use the knowledge base context to provide factual medical information. Never make up or invent medical facts. Always give thorough responses when context is available, covering understanding the concern, causes, solutions, and when to seek medical attention."
+        }
+    ]
+    
+    # Add conversation history if provided
+    if conversation_history:
+        # Limit to last 10 messages to avoid token limits
+        recent_history = conversation_history[-10:] if len(conversation_history) > 10 else conversation_history
+        messages.extend(recent_history)
+        logger.debug(f"Including {len(recent_history)} previous messages for context")
+    
+    # Add current user question
+    messages.append({
+        "role": "user",
+        "content": prompt
+    })
+    
     for attempt in range(retry_count):
         try:
             response = client.chat.completions.create(
                 model=model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a helpful healthcare assistant. Provide accurate, safe medical information."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                max_tokens=800,
+                messages=messages,
+                max_tokens=2000,  # Increased for detailed, comprehensive responses
                 temperature=0.7,
             )
             

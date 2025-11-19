@@ -3,6 +3,7 @@
  * This ensures cookies (JWT tokens) are sent with all requests
  */
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { updateActivity } from './auth';
 
 // Support both NEXT_PUBLIC_BACKEND_URL and NEXT_PUBLIC_API_BASE for flexibility
 const API_BASE =
@@ -37,7 +38,11 @@ const processQueue = (error: AxiosError | null, token: string | null = null) => 
 };
 
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Update activity on successful API calls
+    updateActivity();
+    return response;
+  },
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 

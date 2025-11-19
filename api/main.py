@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, Depends
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, Depends, BackgroundTasks
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from langdetect import LangDetectException, detect  # type: ignore
 from openai import OpenAI
 from starlette.middleware.base import RequestResponseEndpoint
@@ -63,7 +63,7 @@ from .safety import (
     extract_symptoms,
 )
 from .router import is_graph_intent, extract_city
-from .rag.retriever import retrieve
+from .rag.retriever import retrieve, initialize_chroma_client
 from .models import ChatRequest, ChatResponse, Profile, VoiceChatResponse
 
 from .graph import fallback as graph_fallback
@@ -80,6 +80,7 @@ from .auth.middleware import require_auth, require_role
 from .pipeline_functions import (
     detect_and_translate_to_english,
     generate_final_answer,
+    generate_final_answer_stream,
     translate_to_user_language,
 )
 from .services.cache import cache_service
@@ -142,6 +143,25 @@ async def _startup() -> None:
                     logger.error("Redis initialization failed even after retry")
             except Exception as e:
                 logger.error(f"Redis initialization error: {e}", exc_info=True)
+    
+    # Pre-initialize ChromaDB vector database (reduces cold start time)
+    logger.info("Pre-initializing ChromaDB vector database...")
+    try:
+        initialize_chroma_client()
+        logger.info("ChromaDB vector database pre-initialized successfully")
+    except Exception as e:
+        logger.warning(f"Failed to pre-initialize ChromaDB (will initialize on first use): {e}")
+    
+    # Pre-initialize OpenAI client (reduces cold start time)
+    logger.info("Pre-initializing OpenAI client...")
+    try:
+        openai_client = get_openai_client()
+        if openai_client:
+            logger.info("OpenAI client pre-initialized successfully")
+        else:
+            logger.warning("OpenAI client not configured (API key not set)")
+    except Exception as e:
+        logger.warning(f"Failed to pre-initialize OpenAI client (will initialize on first use): {e}")
 
 
 @app.on_event("shutdown")
@@ -473,11 +493,17 @@ def translate_romanized_to_english(
 
 
 def romanize_text(text: str, lang: str) -> str:
+    # Check if transliteration libraries are available
+    try:
+        from indic_transliteration import sanscript  # type: ignore
+        from indic_transliteration.sanscript import transliterate  # type: ignore
+    except ImportError:
+        # Transliteration libraries not available
+        return text
+    
     if (
         not text
         or lang == "en"
-        or transliterate is None
-        or sanscript is None
         or is_mostly_ascii(text)
     ):
         return text
@@ -1084,7 +1110,118 @@ async def speech_to_text(
         raise HTTPException(status_code=502, detail=f"STT error: {str(exc)}") from exc
 
 
-def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[str, float]]:
+def _enhance_search_query_with_context(current_query: str, conversation_history: Optional[List[Dict[str, str]]]) -> str:
+    """
+    Enhance search query using conversation history for better RAG retrieval
+    
+    Args:
+        current_query: Current user question
+        conversation_history: Previous conversation messages
+        
+    Returns:
+        Enhanced search query
+    """
+    if not conversation_history or len(conversation_history) == 0:
+        return current_query
+    
+    # Check if current query is a follow-up (short, uses pronouns/references)
+    follow_up_indicators = ["this", "that", "it", "these", "those", "what does", "how long", "when should", "why did"]
+    is_follow_up = any(indicator in current_query.lower() for indicator in follow_up_indicators) or len(current_query.split()) < 5
+    
+    if not is_follow_up:
+        return current_query
+    
+    # Extract key terms from previous messages
+    key_terms = []
+    for msg in conversation_history[-4:]:  # Look at last 4 messages
+        content = msg.get("content", "")
+        if content:
+            # Extract important words (nouns, medical terms)
+            words = content.lower().split()
+            # Filter for meaningful words (length > 4, not common words)
+            meaningful = [
+                w for w in words 
+                if len(w) > 4 and w not in ["what", "where", "when", "should", "could", "would", "about", "there", "their", "these", "those"]
+            ]
+            key_terms.extend(meaningful[:5])  # Take top 5 from each message
+    
+    # Combine current query with key terms from conversation
+    if key_terms:
+        # Remove duplicates and limit
+        unique_terms = list(dict.fromkeys(key_terms))[:5]  # Preserve order, limit to 5
+        enhanced_query = f"{current_query} {' '.join(unique_terms)}"
+        logger.debug(f"Enhanced search query: {enhanced_query} (original: {current_query})")
+        return enhanced_query
+    
+    return current_query
+
+
+def _format_conversation_history(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    """
+    Format database messages into OpenAI message format
+    
+    Args:
+        messages: List of message dicts from database
+        
+    Returns:
+        List of formatted messages for OpenAI API (with roles: "user" or "assistant")
+    """
+    formatted = []
+    for msg in messages:
+        role = msg.get("role")  # "user" or "assistant" from database
+        
+        # Get content based on role
+        if role == "user":
+            # For user messages, use message_text
+            content = msg.get("message_text") or msg.get("text") or ""
+        elif role == "assistant":
+            # For assistant messages, use answer if available, otherwise message_text
+            content = msg.get("answer") or msg.get("message_text") or msg.get("text") or ""
+        else:
+            # Skip unknown roles
+            continue
+        
+        # Only add if we have valid role and content
+        if role in ("user", "assistant") and content:
+            formatted.append({
+                "role": role,
+                "content": content
+            })
+    
+    return formatted
+
+
+async def _get_conversation_history(session_id: Optional[str]) -> List[Dict[str, str]]:
+    """
+    Retrieve conversation history for a session
+    
+    Args:
+        session_id: Session ID to retrieve history for
+        
+    Returns:
+        List of formatted messages for OpenAI API
+    """
+    if not session_id or not db_client.is_connected():
+        return []
+    
+    try:
+        # Retrieve previous messages (excluding the current one being processed)
+        messages = await db_service.get_session_messages(session_id, limit=20)
+        
+        if not messages:
+            return []
+        
+        # Format messages for OpenAI API
+        return _format_conversation_history(messages)
+    except Exception as e:
+        logger.warning(f"Failed to retrieve conversation history: {e}", exc_info=True)
+        return []
+
+
+def process_chat_request(
+    request: ChatRequest, 
+    conversation_history: Optional[List[Dict[str, str]]] = None
+) -> Tuple[ChatResponse, str, Dict[str, float]]:
     timings: Dict[str, float] = {}
     total_start = time.perf_counter()
 
@@ -1335,7 +1472,9 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
         # STEP 2: ChromaDB (Semantic search)
         # ============================================================
         rag_start = time.perf_counter()
-        rag_results = retrieve(processed_text, k=3)
+        # Enhance query with conversation history for better context
+        enhanced_query = _enhance_search_query_with_context(processed_text, conversation_history)
+        rag_results = retrieve(enhanced_query, k=3)
         timings["retrieval"] = time.perf_counter() - rag_start
         context = "\n\n".join([r["chunk"] for r in rag_results])
         citations = [
@@ -1381,6 +1520,7 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
                 rag_context=context,
                 facts=facts_en,
                 profile=profile,
+                conversation_history=conversation_history,
             )
             provider_meta = {"provider": "openai", "model": model, "fallback": False}
         else:
@@ -1431,7 +1571,9 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
         # STEP 2: ChromaDB (Semantic search)
         # ============================================================
         rag_start = time.perf_counter()
-        rag_results = retrieve(processed_text, k=4)
+        # Enhance query with conversation history for better context
+        enhanced_query = _enhance_search_query_with_context(processed_text, conversation_history)
+        rag_results = retrieve(enhanced_query, k=4)
         timings["retrieval"] = time.perf_counter() - rag_start
         debug_info["rag_context_snippets"] = [r["chunk"][:200] for r in rag_results] if rag_results else []
         
@@ -1609,9 +1751,75 @@ def process_chat_request(request: ChatRequest) -> Tuple[ChatResponse, str, Dict[
     return response, target_lang, timings
 
 
+async def save_chat_messages_background(
+    session_id: str,
+    customer_id: str,
+    user_message: str,
+    user_lang: str,
+    assistant_response: ChatResponse,
+    target_lang: str,
+) -> None:
+    """
+    Background task to save both user and assistant messages to database.
+    This runs after the response is sent to the user for faster response times.
+    """
+    if not db_client.is_connected() or not session_id:
+        return
+    
+    try:
+        # Save user message
+        await db_service.save_chat_message(
+            session_id=session_id,
+            role="user",
+            message_text=user_message,
+            language=user_lang,
+        )
+        
+        # Convert safety to dict
+        safety_dict = assistant_response.safety.model_dump() if hasattr(assistant_response.safety, 'model_dump') else dict(assistant_response.safety)
+        
+        # Save assistant response
+        await db_service.save_chat_message(
+            session_id=session_id,
+            role="assistant",
+            message_text=user_message,  # User's original question
+            language=target_lang,
+            answer=assistant_response.answer,
+            route=assistant_response.route,
+            safety_data=safety_dict,
+            facts=assistant_response.facts,
+            citations=assistant_response.citations,
+            metadata=assistant_response.metadata,
+        )
+        
+        # Invalidate cache for customer sessions and session messages after saving
+        try:
+            if customer_id:
+                # Invalidate customer sessions cache (all limits)
+                for limit_val in [10, 50, 100, 200, 500, 1000]:
+                    cache_key = f"sessions:{customer_id}:{limit_val}"
+                    await cache_service.delete(cache_key)
+                    logger.debug(f"Invalidated cache: {cache_key}")
+            
+            # Invalidate session messages cache (all limits)
+            if session_id:
+                for limit_val in [10, 50, 100, 200, 500, 1000]:
+                    cache_key = f"session_messages:{session_id}:{limit_val}"
+                    await cache_service.delete(cache_key)
+                    logger.debug(f"Invalidated cache: {cache_key}")
+                # Invalidate full session cache
+                await cache_service.delete(f"session_full:{session_id}")
+                logger.debug(f"Invalidated cache: session_full:{session_id}")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate cache: {e}")
+    except Exception as e:
+        logger.warning(f"Failed to save chat messages in background: {e}", exc_info=True)
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
+    background_tasks: BackgroundTasks,
     user: dict = Depends(require_auth)
 ):
     """
@@ -1634,6 +1842,7 @@ async def chat(
         customer_id = user.get("user_id") or request.customer_id
         session_id = request.session_id
         
+        # Prepare session in background (non-blocking, but needed for message saving)
         if db_client.is_connected():
             try:
                 # Update authenticated user's profile if needed
@@ -1656,7 +1865,7 @@ async def chat(
                 else:
                     customer_id = getattr(customer, "id", customer_id)
                 
-                # Get or create session
+                # Get or create session (needed for session_id)
                 chat_session = await db_service.get_or_create_session(
                     customer_id=customer_id,
                     language=request.lang,
@@ -1665,71 +1874,45 @@ async def chat(
                 
                 if chat_session:
                     session_id = chat_session["id"]
-                    
-                    # Save user message
-                    await db_service.save_chat_message(
-                        session_id=session_id,
-                        role="user",
-                        message_text=request.text,
-                        language=request.lang,
-                    )
             except HTTPException:
                 raise
             except Exception as e:
-                logger.warning(f"Failed to save customer/session data: {e}", exc_info=True)
+                logger.warning(f"Failed to prepare customer/session data: {e}", exc_info=True)
+        
+        # Retrieve conversation history for context
+        conversation_history = []
+        if session_id and db_client.is_connected():
+            try:
+                conversation_history = await _get_conversation_history(session_id)
+                if conversation_history:
+                    logger.debug(f"Retrieved {len(conversation_history)} previous messages for context")
+            except Exception as e:
+                logger.warning(f"Failed to retrieve conversation history: {e}", exc_info=True)
         
         # Process chat request (no caching for chat responses)
-        response, target_lang, timings = process_chat_request(request)
-        
-        # Save assistant response to database (L3 cache)
-        if db_client.is_connected() and session_id:
-            try:
-                # Convert safety to dict
-                safety_dict = response.safety.model_dump() if hasattr(response.safety, 'model_dump') else dict(response.safety)
-                
-                await db_service.save_chat_message(
-                    session_id=session_id,
-                    role="assistant",
-                    message_text=request.text,  # User's original question
-                    language=target_lang,
-                    answer=response.answer,
-                    route=response.route,
-                    safety_data=safety_dict,
-                    facts=response.facts,
-                    citations=response.citations,
-                    metadata=response.metadata,
-                )
-                
-                # Invalidate cache for customer sessions and session messages after saving
-                try:
-                    if customer_id:
-                        # Invalidate customer sessions cache (all limits)
-                        for limit_val in [10, 50, 100, 200, 500, 1000]:
-                            cache_key = f"sessions:{customer_id}:{limit_val}"
-                            await cache_service.delete(cache_key)
-                            logger.debug(f"Invalidated cache: {cache_key}")
-                    
-                    # Invalidate session messages cache (all limits)
-                    if session_id:
-                        for limit_val in [10, 50, 100, 200, 500, 1000]:
-                            cache_key = f"session_messages:{session_id}:{limit_val}"
-                            await cache_service.delete(cache_key)
-                            logger.debug(f"Invalidated cache: {cache_key}")
-                        # Invalidate full session cache
-                        await cache_service.delete(f"session_full:{session_id}")
-                        logger.debug(f"Invalidated cache: session_full:{session_id}")
-                except Exception as e:
-                    logger.warning(f"Failed to invalidate cache: {e}")
-            except Exception as e:
-                logger.warning(f"Failed to save chat message: {e}", exc_info=True)
-        
-        # Note: Chat responses are NOT cached - only dynamic content (sessions, messages) is cached
+        # This is the main work - generate AI response
+        response, target_lang, timings = process_chat_request(request, conversation_history=conversation_history)
         
         # Add customer_id and session_id to response metadata
         if customer_id:
             response.metadata["customer_id"] = customer_id
         if session_id:
             response.metadata["session_id"] = session_id
+        
+        # Queue background task to save messages (non-blocking)
+        # This allows the response to be returned immediately
+        if db_client.is_connected() and session_id:
+            background_tasks.add_task(
+                save_chat_messages_background,
+                session_id=session_id,
+                customer_id=customer_id,
+                user_message=request.text,
+                user_lang=request.lang,
+                assistant_response=response,
+                target_lang=target_lang,
+            )
+        
+        # Note: Chat responses are NOT cached - only dynamic content (sessions, messages) is cached
         
         logger.info(
             "Chat response ready",
@@ -1754,6 +1937,353 @@ async def chat(
         raise
     except Exception as e:
         logger.exception("Chat processing failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to process your request right now. Please try again in a moment.",
+        ) from e
+
+
+async def process_chat_request_stream(
+    request: ChatRequest,
+    conversation_history: Optional[List[Dict[str, str]]] = None,
+    session_id: Optional[str] = None,
+    customer_id: Optional[str] = None
+):
+    """
+    Process chat request and stream the response.
+    This is a streaming version that yields chunks as they're generated.
+    
+    Args:
+        request: Chat request
+        conversation_history: Previous conversation messages for context
+        session_id: Session ID for metadata
+        customer_id: Customer ID for metadata
+    """
+    text = request.text
+    profile: Profile = request.profile
+    personalization_notes = build_personalization_notes(profile)
+    
+    # Set default response_style if not provided in request
+    response_style = getattr(request, "response_style", "native")
+    
+    # Language detection and translation to English (same as regular endpoint)
+    detection_start = time.perf_counter()
+    openai_client = get_openai_client()
+    model = _chat_model_openai
+    
+    from .pipeline_functions import detect_language_only, translate_to_english
+    
+    detected_lang = None
+    romanized_lang = detect_romanized_language(text)
+    if romanized_lang:
+        detected_lang = romanized_lang
+    
+    if not detected_lang:
+        if openai_client and model:
+            detected_lang = detect_language_only(
+                client=openai_client,
+                model=model,
+                user_text=text
+            )
+        else:
+            detected_lang = detect_language(text) if text else DEFAULT_LANG
+            detected_lang = detected_lang if detected_lang in SUPPORTED_LANG_CODES else DEFAULT_LANG
+    
+    requested_lang_raw = request.lang if request.lang in SUPPORTED_LANG_CODES else None
+    target_lang = requested_lang_raw or detected_lang or DEFAULT_LANG
+    
+    # Translate to English if needed
+    if detected_lang == "en":
+        processed_text = text
+    else:
+        if openai_client and model:
+            processed_text = translate_to_english(
+                client=openai_client,
+                model=model,
+                user_text=text,
+                source_language=detected_lang
+            )
+        else:
+            processed_text = translate_text(text, target_lang="en", src_lang=detected_lang)
+    
+    # Safety analysis
+    safety_result = detect_red_flags(processed_text, "en")
+    mental_health_en = detect_mental_health_crisis(processed_text, "en")
+    pregnancy_alert_en = detect_pregnancy_emergency(processed_text)
+    
+    # RAG retrieval - enhance query with conversation history for better context
+    enhanced_query = _enhance_search_query_with_context(processed_text, conversation_history)
+    rag_results = retrieve(enhanced_query, k=4)
+    context = "\n\n".join([r["chunk"] for r in rag_results]) if rag_results else ""
+    citations = [
+        {"source": r["source"], "id": r["id"], "topic": r.get("topic")}
+        for r in rag_results
+    ]
+    
+    # Build facts
+    facts_en: List[Dict[str, Any]] = []
+    if safety_result["red_flag"]:
+        symptoms = extract_symptoms(processed_text)
+        red_flag_results = graph_get_red_flags(symptoms)
+        if red_flag_results:
+            facts_en.append({"type": "red_flags", "data": red_flag_results})
+    
+    if mental_health_en["crisis"]:
+        facts_en.append({
+            "type": "mental_health_crisis",
+            "data": {
+                "matched": mental_health_en["matched"],
+                "actions": mental_health_en["first_aid"],
+            },
+        })
+    
+    if pregnancy_alert_en["concern"]:
+        facts_en.append({
+            "type": "pregnancy_alert",
+            "data": {
+                "matched": pregnancy_alert_en["matched"],
+                "guidance": PREGNANCY_ALERT_GUIDANCE_EN,
+            },
+        })
+    
+    # Add personalization notes
+    if personalization_notes:
+        context += "\n\nPersonalization notes:\n" + "\n".join(
+            f"- {note}" for note in personalization_notes
+        )
+        facts_en.append({"type": "personalization", "data": personalization_notes})
+    
+    # Stream the answer generation
+    answer_en_chunks = []
+    if openai_client and model:
+        # Use context if available, otherwise use empty string
+        rag_context = context if context else ""
+        async for chunk in generate_final_answer_stream(
+            client=openai_client,
+            model=model,
+            user_question=processed_text,
+            rag_context=rag_context,
+            facts=facts_en,
+            profile=profile,
+            conversation_history=conversation_history,
+        ):
+            answer_en_chunks.append(chunk)
+            # Send chunk to client (as JSON for SSE)
+            yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+    else:
+        # Fallback: generate a simple response if no client/model available
+        fallback_answer = build_fallback_answer(
+            query_en=processed_text,
+            rag_results=rag_results,
+            facts=facts_en,
+            citations=citations,
+            target_lang="en",
+            response_style="native",
+        )
+        # Stream the fallback answer character by character for consistency
+        for char in fallback_answer:
+            answer_en_chunks.append(char)
+            yield f"data: {json.dumps({'type': 'chunk', 'content': char})}\n\n"
+    
+    # Combine all chunks
+    answer_en = "".join(answer_en_chunks)
+    
+    # Translate if needed
+    if detected_lang == "en":
+        answer = answer_en
+    elif detected_lang != "en" and openai_client and model:
+        answer = translate_to_user_language(
+            client=openai_client,
+            model=model,
+            english_text=answer_en,
+            target_language=detected_lang,
+        )
+        # Send final translated answer
+        yield f"data: {json.dumps({'type': 'translated', 'content': answer})}\n\n"
+    else:
+        answer = answer_en
+    
+    # Add disclaimer
+    if not safety_result["red_flag"]:
+        disclaimer_en = DISCLAIMER_EN
+        if detected_lang == "en":
+            disclaimer = disclaimer_en
+        elif detected_lang != "en" and openai_client and model:
+            disclaimer = translate_to_user_language(
+                client=openai_client,
+                model=model,
+                english_text=disclaimer_en,
+                target_language=detected_lang,
+            )
+        else:
+            disclaimer = disclaimer_en
+        answer += "\n\n" + disclaimer
+    
+    # Send completion message with full response metadata
+    safety_payload = {
+        **safety_result,
+        "mental_health": mental_health_en,
+        "pregnancy": pregnancy_alert_en,
+    }
+    
+    completion_data = {
+        "type": "done",
+        "answer": answer,
+        "route": "vector",
+        "facts": facts_en,
+        "citations": citations,
+        "safety": safety_payload,
+        "metadata": {
+            "target_language": target_lang,
+            "detected_language": detected_lang,
+        }
+    }
+    
+    # Add session_id and customer_id to metadata if available
+    if session_id:
+        completion_data["metadata"]["session_id"] = session_id
+    if customer_id:
+        completion_data["metadata"]["customer_id"] = customer_id
+    
+    yield f"data: {json.dumps(completion_data)}\n\n"
+
+
+@app.post("/chat/stream")
+async def chat_stream(
+    request: ChatRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(require_auth)
+):
+    """
+    Streaming chat endpoint - streams response as it's generated (typewriter effect)
+    Uses Server-Sent Events (SSE) to stream chunks
+    """
+    logger.info(
+        "Received streaming chat request",
+        extra={
+            "lang": request.lang,
+            "user_id": user.get("user_id"),
+        },
+    )
+    try:
+        # Use authenticated user's ID
+        customer_id = user.get("user_id") or request.customer_id
+        session_id = request.session_id
+        
+        # Prepare session
+        if db_client.is_connected():
+            try:
+                profile_data = request.profile.model_dump(exclude_none=True)
+                customer = await db_service.get_customer(customer_id)
+                
+                if not customer:
+                    logger.error(f"Customer not found: {customer_id}")
+                    raise HTTPException(status_code=404, detail="Customer not found")
+                
+                if profile_data:
+                    customer = await db_service.update_customer_profile(customer_id, profile_data)
+                
+                if isinstance(customer, dict):
+                    customer_id = customer.get("id") or customer_id
+                else:
+                    customer_id = getattr(customer, "id", customer_id)
+                
+                chat_session = await db_service.get_or_create_session(
+                    customer_id=customer_id,
+                    language=request.lang,
+                    session_id=session_id
+                )
+                
+                if chat_session:
+                    session_id = chat_session["id"]
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning(f"Failed to prepare customer/session data: {e}", exc_info=True)
+        
+        # Retrieve conversation history for context
+        conversation_history = []
+        if session_id and db_client.is_connected():
+            try:
+                conversation_history = await _get_conversation_history(session_id)
+                if conversation_history:
+                    logger.debug(f"Retrieved {len(conversation_history)} previous messages for context")
+            except Exception as e:
+                logger.warning(f"Failed to retrieve conversation history: {e}", exc_info=True)
+        
+        # Stream the response
+        async def generate():
+            full_answer = ""
+            async for chunk_data in process_chat_request_stream(
+                request, 
+                conversation_history=conversation_history,
+                session_id=session_id,
+                customer_id=customer_id
+            ):
+                yield chunk_data
+                # Extract content from chunks to build full answer
+                try:
+                    if chunk_data.startswith("data: "):
+                        data_str = chunk_data[6:]  # Remove "data: " prefix
+                        data = json.loads(data_str)
+                        if data.get("type") == "chunk":
+                            full_answer += data.get("content", "")
+                        elif data.get("type") == "done":
+                            full_answer = data.get("answer", full_answer)
+                except:
+                    pass
+            
+            # Save messages in background after streaming completes
+            if db_client.is_connected() and session_id and full_answer:
+                try:
+                    # Create a minimal ChatResponse for saving
+                    from .models import Safety, MentalHealthSafety, PregnancySafety
+                    safety_data = Safety(
+                        red_flag=False,
+                        mental_health=MentalHealthSafety(
+                            crisis=False,
+                            matched=[],
+                            first_aid=[]
+                        ),
+                        pregnancy=PregnancySafety(
+                            concern=False,
+                            matched=[]
+                        )
+                    )
+                    response_obj = ChatResponse(
+                        answer=full_answer,
+                        route="vector",
+                        facts=[],
+                        citations=[],
+                        safety=safety_data,
+                        metadata={}
+                    )
+                    
+                    background_tasks.add_task(
+                        save_chat_messages_background,
+                        session_id=session_id,
+                        customer_id=customer_id,
+                        user_message=request.text,
+                        user_lang=request.lang,
+                        assistant_response=response_obj,
+                        target_lang=request.lang,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to queue message save: {e}", exc_info=True)
+        
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",  # Disable buffering in nginx
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Streaming chat processing failed")
         raise HTTPException(
             status_code=500,
             detail="Unable to process your request right now. Please try again in a moment.",
@@ -1814,6 +2344,7 @@ async def invalidate_cache_endpoint(
 
 @app.post("/voice-chat", response_model=VoiceChatResponse)
 async def voice_chat(
+    background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
     lang: Optional[str] = Form(None),
     profile: Optional[str] = Form(None),
@@ -1853,7 +2384,7 @@ async def voice_chat(
             session_id=session_id,
         )
 
-        # Save customer data to database (same logic as chat endpoint)
+        # Prepare session (non-blocking, but needed for message saving)
         if db_client.is_connected():
             try:
                 profile_data = chat_request.profile.model_dump(exclude_none=True)
@@ -1871,6 +2402,7 @@ async def voice_chat(
                 
                 customer_id = customer["id"] if customer else authenticated_customer_id
                 
+                # Get or create session (needed for session_id)
                 chat_session = await db_service.get_or_create_session(
                     customer_id=customer_id,
                     language=chat_request.lang,
@@ -1879,40 +2411,36 @@ async def voice_chat(
                 
                 if chat_session:
                     session_id = chat_session["id"]
-                    
-                    # Save user message
-                    await db_service.save_chat_message(
-                        session_id=session_id,
-                        role="user",
-                        message_text=transcript,
-                        language=chat_request.lang,
-                    )
             except HTTPException:
                 raise
             except Exception as e:
-                logger.warning(f"Failed to save customer/session data in voice_chat: {e}", exc_info=True)
+                logger.warning(f"Failed to prepare customer/session data in voice_chat: {e}", exc_info=True)
 
-        chat_response, target_lang, chat_timings = process_chat_request(chat_request)
-
-        # Save assistant response to database
-        if db_client.is_connected() and session_id:
+        # Retrieve conversation history for context
+        conversation_history = []
+        if session_id and db_client.is_connected():
             try:
-                safety_dict = chat_response.safety.model_dump() if hasattr(chat_response.safety, 'model_dump') else dict(chat_response.safety)
-                
-                await db_service.save_chat_message(
-                    session_id=session_id,
-                    role="assistant",
-                    message_text=transcript,
-                    language=target_lang,
-                    answer=chat_response.answer,
-                    route=chat_response.route,
-                    safety_data=safety_dict,
-                    facts=chat_response.facts,
-                    citations=chat_response.citations,
-                    metadata=chat_response.metadata,
-                )
+                conversation_history = await _get_conversation_history(session_id)
+                if conversation_history:
+                    logger.debug(f"Retrieved {len(conversation_history)} previous messages for context")
             except Exception as e:
-                logger.warning(f"Failed to save chat message in voice_chat: {e}", exc_info=True)
+                logger.warning(f"Failed to retrieve conversation history: {e}", exc_info=True)
+
+        # Process chat request - generate AI response
+        chat_response, target_lang, chat_timings = process_chat_request(chat_request, conversation_history=conversation_history)
+
+        # Queue background task to save messages (non-blocking)
+        # This allows the response to be returned immediately
+        if db_client.is_connected() and session_id:
+            background_tasks.add_task(
+                save_chat_messages_background,
+                session_id=session_id,
+                customer_id=customer_id,
+                user_message=transcript,
+                user_lang=chat_request.lang,
+                assistant_response=chat_response,
+                target_lang=target_lang,
+            )
 
         tts_start = time.perf_counter()
         audio_bytes_out, tts_provider, audio_mime = synthesize_speech(chat_response.answer, target_lang)

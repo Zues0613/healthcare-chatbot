@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { Check, Loader2, ShieldCheck, Sparkles, XCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { setAuth, type AuthUser } from '../../utils/auth';
+import { setAuth, isAuthenticated, type AuthUser } from '../../utils/auth';
 import { apiClient } from '../../utils/api';
 
 type ToastVariant = 'success' | 'error' | 'info';
@@ -48,6 +48,14 @@ export default function AuthExperience() {
   const router = useRouter();
   const [mode, setMode] = useState<'signup' | 'login'>('signup');
   const [loading, setLoading] = useState(false);
+  
+  // Check if user is already authenticated and redirect to main chat
+  useEffect(() => {
+    if (isAuthenticated()) {
+      // User is authenticated, redirect to main chat interface
+      router.push('/');
+    }
+  }, [router]);
   const [signUpForm, setSignUpForm] = useState({
     fullName: '',
     email: '',
@@ -76,6 +84,17 @@ export default function AuthExperience() {
     }, 3200);
     toastTimers.current[id] = timer;
   }, []);
+
+  // Show expired message if redirected from expired token
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const authExpired = sessionStorage.getItem('authExpired');
+      if (authExpired === 'true') {
+        sessionStorage.removeItem('authExpired');
+        addToast('Your session has expired. Please log in again.', 'info');
+      }
+    }
+  }, [addToast]);
 
   useEffect(() => () => {
     Object.values(toastTimers.current).forEach((timer) => clearTimeout(timer));

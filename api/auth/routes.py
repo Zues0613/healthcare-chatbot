@@ -66,7 +66,7 @@ async def register(
             httponly=True,  # Client-side JavaScript cannot access
             secure=SECURE_COOKIE,  # Required for samesite="none" (cross-origin)
             samesite=SAMESITE_POLICY,  # "none" for cross-origin, "lax" for same-origin
-            max_age=30 * 60,  # 30 minutes
+            max_age=7 * 24 * 60 * 60,  # 7 days (frontend handles 12-hour activity-based expiration)
             path="/",  # Ensure cookie is available for all paths
         )
         
@@ -125,7 +125,7 @@ async def login(
             httponly=True,  # Client-side JavaScript cannot access
             secure=SECURE_COOKIE,  # Required for samesite="none" (cross-origin)
             samesite=SAMESITE_POLICY,  # "none" for cross-origin, "lax" for same-origin
-            max_age=30 * 60,  # 30 minutes
+            max_age=7 * 24 * 60 * 60,  # 7 days (frontend handles 12-hour activity-based expiration)
             path="/",  # Ensure cookie is available for all paths
         )
         
@@ -291,7 +291,7 @@ async def refresh_token(
             httponly=True,  # Client-side JavaScript cannot access
             secure=SECURE_COOKIE,  # Required for samesite="none" (cross-origin)
             samesite=SAMESITE_POLICY,  # "none" for cross-origin, "lax" for same-origin
-            max_age=30 * 60,  # 30 minutes
+            max_age=7 * 24 * 60 * 60,  # 7 days (frontend handles 12-hour activity-based expiration)
             path="/",  # Ensure cookie is available for all paths
         )
         

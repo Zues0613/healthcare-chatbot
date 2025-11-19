@@ -13,6 +13,59 @@ logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
 logging.getLogger("chromadb.telemetry.telemetry").setLevel(logging.CRITICAL)
 logging.getLogger("chromadb.telemetry.product").setLevel(logging.CRITICAL)
 
+# Cached ChromaDB client and collection for performance optimization
+_chroma_client = None
+_chroma_collection = None
+_chroma_initialized = False
+
+
+def _initialize_chroma():
+    """Initialize ChromaDB client and collection (cached for performance)"""
+    global _chroma_client, _chroma_collection, _chroma_initialized
+    
+    if _chroma_initialized and _chroma_client is not None and _chroma_collection is not None:
+        return _chroma_client, _chroma_collection
+    
+    try:
+        # Get the correct path
+        script_dir = Path(__file__).parent
+        chroma_path = script_dir / "chroma_db"
+        
+        # Initialize Chroma client (only once)
+        _chroma_client = chromadb.PersistentClient(
+            path=str(chroma_path),
+            settings=Settings(anonymized_telemetry=False),
+        )
+        
+        # Try to get collection - handle corruption gracefully
+        try:
+            _chroma_collection = _chroma_client.get_collection("medical_knowledge")
+            _chroma_initialized = True
+            logging.info("ChromaDB client and collection initialized successfully")
+        except Exception as collection_error:
+            # If collection is corrupted or doesn't exist, set to None
+            error_msg = str(collection_error)
+            if "object of type 'int' has no len()" in error_msg or "TypeError" in str(type(collection_error).__name__):
+                logging.error(f"ChromaDB collection appears corrupted. Error: {error_msg}")
+            else:
+                logging.warning(f"Failed to get ChromaDB collection: {error_msg}")
+            _chroma_client = None
+            _chroma_collection = None
+            _chroma_initialized = False
+    
+    except Exception as e:
+        logging.error(f"Failed to initialize ChromaDB: {e}", exc_info=True)
+        _chroma_client = None
+        _chroma_collection = None
+        _chroma_initialized = False
+    
+    return _chroma_client, _chroma_collection
+
+
+def initialize_chroma_client():
+    """Public function to pre-initialize ChromaDB on startup"""
+    _initialize_chroma()
+
 
 def retrieve(query: str, k: int = 4) -> List[Dict[str, str]]:
     """
@@ -26,26 +79,11 @@ def retrieve(query: str, k: int = 4) -> List[Dict[str, str]]:
         List of dictionaries with 'chunk' and 'id' keys
     """
     try:
-        # Get the correct path
-        script_dir = Path(__file__).parent
-        chroma_path = script_dir / "chroma_db"
+        # Use cached client and collection (initialized on first call or startup)
+        chroma_client, collection = _initialize_chroma()
         
-        # Initialize Chroma client
-        chroma_client = chromadb.PersistentClient(
-            path=str(chroma_path),
-            settings=Settings(anonymized_telemetry=False),
-        )
-        
-        # Try to get collection - handle corruption gracefully
-        try:
-            collection = chroma_client.get_collection("medical_knowledge")
-        except Exception as collection_error:
-            # If collection is corrupted or doesn't exist, return empty results
-            error_msg = str(collection_error)
-            if "object of type 'int' has no len()" in error_msg or "TypeError" in str(type(collection_error).__name__):
-                print(f"ChromaDB collection appears corrupted. Returning empty results. Error: {error_msg}")
-            else:
-                print(f"Failed to get ChromaDB collection: {error_msg}")
+        # If initialization failed, return empty results
+        if chroma_client is None or collection is None:
             return []
         
         # Query the collection - handle internal ChromaDB errors
