@@ -2566,8 +2566,8 @@ async def process_chat_request_stream(
             answer_en_chunks.append(chunk)
             # Send chunk to client (as JSON for SSE)
             yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
-    pipeline_timings["ai_generation"] = time.perf_counter() - generation_start
-    logger.info(f"✅ AI generation completed: {pipeline_timings['ai_generation']:.2f}s ({len(''.join(answer_en_chunks))} chars)")
+        pipeline_timings["ai_generation"] = time.perf_counter() - generation_start
+        logger.info(f"✅ AI generation completed: {pipeline_timings['ai_generation']:.2f}s ({len(''.join(answer_en_chunks))} chars)")
     else:
         # Fallback: generate a simple response if no client/model available
         fallback_answer = build_fallback_answer(
