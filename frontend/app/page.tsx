@@ -268,8 +268,11 @@ export default function Home() {
     }
   }, []);
 
-  // Load chat sessions from API
-  const loadChatSessions = useCallback(async (customerId: string) => {
+  // Debounce timer for session loading (prevents excessive API calls)
+  const sessionLoadTimerRef = useRef<number | null>(null);
+
+  // Internal function that actually fetches sessions
+  const loadChatSessionsInternal = useCallback(async (customerId: string) => {
     if (!customerId) return;
     
     setSessionsLoading(true);
@@ -297,6 +300,29 @@ export default function Home() {
       setSessionsLoading(false);
     }
   }, [loadChatSessionsFromCache, saveChatSessionsToCache]);
+
+  // Load chat sessions from API with debouncing (prevents excessive API calls)
+  const loadChatSessions = useCallback(async (customerId: string, immediate: boolean = false) => {
+    if (!customerId) return;
+    
+    // Clear existing timer if debouncing
+    if (sessionLoadTimerRef.current) {
+      clearTimeout(sessionLoadTimerRef.current);
+      sessionLoadTimerRef.current = null;
+    }
+    
+    // If immediate flag is set, load right away (e.g., after sending a message)
+    if (immediate) {
+      await loadChatSessionsInternal(customerId);
+      return;
+    }
+    
+    // Otherwise, debounce the call (wait 500ms after last call)
+    sessionLoadTimerRef.current = window.setTimeout(() => {
+      loadChatSessionsInternal(customerId);
+      sessionLoadTimerRef.current = null;
+    }, 500);
+  }, [loadChatSessionsInternal]);
 
   // Check authentication on mount and get user info
   useEffect(() => {
@@ -622,7 +648,7 @@ export default function Home() {
                   setCurrentSessionId(data.metadata.session_id);
                 }
 
-                // Reload chat sessions after receiving response
+                // Reload chat sessions after receiving response (immediate load after message)
                 if (customerId) {
                   try {
                     const cacheKey = `chat_sessions_${customerId}`;
@@ -630,7 +656,8 @@ export default function Home() {
                   } catch (err) {
                     console.warn('Error clearing cache:', err);
                   }
-                  loadChatSessions(customerId);
+                  // Load immediately after sending message (not debounced)
+                  loadChatSessions(customerId, true);
                 }
 
                 // Text-to-speech for final answer

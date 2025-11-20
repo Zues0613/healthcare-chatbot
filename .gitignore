@@ -45,4 +45,6 @@ Thumbs.db
 # Test files with hardcoded credentials
 api/test_streaming_and_queue.py
 api/test_context_management.py
+api/test_symptom_relationships.py
+api/test_conversation_history_cache.py
 

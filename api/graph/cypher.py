@@ -1,4 +1,4 @@
-from .client import run_cypher
+from .client import neo4j_client, run_cypher
 from typing import List, Dict
 
 
@@ -22,6 +22,9 @@ def get_red_flags(symptoms: List[str]) -> List[Dict]:
     symptoms_lower = [s.lower() for s in symptoms]
     
     try:
+        # Ensure connection is available (will use persistent connection pool)
+        if not neo4j_client.is_connected():
+            neo4j_client.connect()
         results = run_cypher(query, {"symptoms": symptoms_lower})
         return results
     except Exception as e:
@@ -96,6 +99,116 @@ def get_providers_in_city(city: str) -> List[Dict]:
         return results
     except Exception as e:
         print(f"Error in get_providers_in_city: {e}")
+        return []
+
+
+def get_related_symptoms(symptoms: List[str]) -> List[Dict]:
+    """
+    Query: Find symptoms that are related to the given symptoms through shared conditions
+    This helps identify symptom clusters (e.g., chest pain and left arm pain both related to heart attack)
+    
+    Checks both IS_RED_FLAG_FOR and IS_ASSOCIATED_WITH relationships to find all possible connections.
+    
+    Args:
+        symptoms: List of symptom names (will be lowercased)
+        
+    Returns:
+        List of dicts with related symptoms and shared conditions
+        Format: [{"related_symptom": "left arm pain", "shared_conditions": ["Heart attack", "Angina"], "original_symptom": "chest pain"}]
+    """
+    # Query for IS_RED_FLAG_FOR relationships
+    query_red_flag = """
+    MATCH (s1:Symptom)-[:IS_RED_FLAG_FOR]->(c:Condition)<-[:IS_RED_FLAG_FOR]-(s2:Symptom)
+    WHERE toLower(s1.name) IN $symptoms 
+      AND toLower(s2.name) <> toLower(s1.name)
+    RETURN s1.name AS original_symptom, 
+           s2.name AS related_symptom, 
+           collect(DISTINCT c.name) AS shared_conditions,
+           'IS_RED_FLAG_FOR' AS relationship_type
+    """
+    
+    # Query for IS_ASSOCIATED_WITH relationships
+    query_associated = """
+    MATCH (s1:Symptom)-[:IS_ASSOCIATED_WITH]->(c:Condition)<-[:IS_ASSOCIATED_WITH]-(s2:Symptom)
+    WHERE toLower(s1.name) IN $symptoms 
+      AND toLower(s2.name) <> toLower(s1.name)
+    RETURN s1.name AS original_symptom, 
+           s2.name AS related_symptom, 
+           collect(DISTINCT c.name) AS shared_conditions,
+           'IS_ASSOCIATED_WITH' AS relationship_type
+    """
+    
+    # Query for mixed relationships (one symptom uses IS_RED_FLAG_FOR, other uses IS_ASSOCIATED_WITH)
+    query_mixed = """
+    MATCH (s1:Symptom)-[:IS_RED_FLAG_FOR]->(c:Condition)<-[:IS_ASSOCIATED_WITH]-(s2:Symptom)
+    WHERE toLower(s1.name) IN $symptoms 
+      AND toLower(s2.name) <> toLower(s1.name)
+    RETURN s1.name AS original_symptom, 
+           s2.name AS related_symptom, 
+           collect(DISTINCT c.name) AS shared_conditions,
+           'MIXED' AS relationship_type
+    UNION
+    MATCH (s1:Symptom)-[:IS_ASSOCIATED_WITH]->(c:Condition)<-[:IS_RED_FLAG_FOR]-(s2:Symptom)
+    WHERE toLower(s1.name) IN $symptoms 
+      AND toLower(s2.name) <> toLower(s1.name)
+    RETURN s1.name AS original_symptom, 
+           s2.name AS related_symptom, 
+           collect(DISTINCT c.name) AS shared_conditions,
+           'MIXED' AS relationship_type
+    """
+    
+    # Lowercase all symptoms for case-insensitive matching
+    symptoms_lower = [s.lower() for s in symptoms]
+    
+    all_results = []
+    
+    try:
+        # Ensure connection is available (will use persistent connection pool)
+        if not neo4j_client.is_connected():
+            neo4j_client.connect()
+        
+        # Execute all three queries and combine results
+        results_red_flag = run_cypher(query_red_flag, {"symptoms": symptoms_lower})
+        results_associated = run_cypher(query_associated, {"symptoms": symptoms_lower})
+        results_mixed = run_cypher(query_mixed, {"symptoms": symptoms_lower})
+        
+        all_results.extend(results_red_flag or [])
+        all_results.extend(results_associated or [])
+        all_results.extend(results_mixed or [])
+        
+        # Merge results by symptom pairs and combine shared conditions
+        merged = {}
+        for result in all_results:
+            original = result.get("original_symptom", "")
+            related = result.get("related_symptom", "")
+            conditions = result.get("shared_conditions", [])
+            key = (original.lower(), related.lower())
+            
+            if key not in merged:
+                merged[key] = {
+                    "original_symptom": original,
+                    "related_symptom": related,
+                    "shared_conditions": set(conditions)
+                }
+            else:
+                merged[key]["shared_conditions"].update(conditions)
+        
+        # Convert sets back to lists and sort by number of shared conditions
+        final_results = []
+        for key, value in merged.items():
+            final_results.append({
+                "original_symptom": value["original_symptom"],
+                "related_symptom": value["related_symptom"],
+                "shared_conditions": sorted(list(value["shared_conditions"]))
+            })
+        
+        # Sort by number of shared conditions (descending)
+        final_results.sort(key=lambda x: len(x.get("shared_conditions", [])), reverse=True)
+        
+        return final_results[:20]  # Limit to top 20
+        
+    except Exception as e:
+        print(f"Error in get_related_symptoms: {e}")
         return []
 
 

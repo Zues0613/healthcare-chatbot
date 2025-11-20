@@ -26,20 +26,24 @@ def create_constraints():
             print(f"  [WARN] Constraint may already exist: {e}")
 
 
-def ingest_triples():
-    """Ingest triples from CSV file"""
-    csv_path = Path(__file__).parent / "seed.csv"
+def ingest_triples_from_csv(csv_path: Path, file_name: str = ""):
+    """Ingest triples from a CSV file"""
+    print(f"\nIngesting triples from {csv_path.name}...")
     
-    print(f"\nIngesting triples from {csv_path}...")
+    if not csv_path.exists():
+        print(f"  [SKIP] File not found: {csv_path}")
+        return 0
     
     with open(csv_path, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         triples = list(reader)
     
-    print(f"Found {len(triples)} triples to ingest")
+    print(f"  Found {len(triples)} triples to ingest")
     
     # Process triples in batches
     batch_size = 50
+    ingested_count = 0
+    
     for i in range(0, len(triples), batch_size):
         batch = triples[i:i + batch_size]
         
@@ -62,12 +66,30 @@ def ingest_triples():
                     'subject': subject,
                     'object': obj
                 })
+                ingested_count += 1
             except Exception as e:
                 print(f"  [WARN] Error ingesting triple: {subject} -> {predicate} -> {obj}: {e}")
         
         print(f"  Processed {min(i + batch_size, len(triples))}/{len(triples)} triples")
     
-    print("[DONE] Ingestion complete!")
+    print(f"  [DONE] Ingested {ingested_count} triples from {csv_path.name}")
+    return ingested_count
+
+
+def ingest_triples():
+    """Ingest triples from all CSV files"""
+    script_dir = Path(__file__).parent
+    
+    # Ingest from seed.csv (main data)
+    seed_csv = script_dir / "seed.csv"
+    count1 = ingest_triples_from_csv(seed_csv, "seed.csv")
+    
+    # Ingest from symptom_relationships.csv (symptom relationship feature)
+    symptom_csv = script_dir / "symptom_relationships.csv"
+    count2 = ingest_triples_from_csv(symptom_csv, "symptom_relationships.csv")
+    
+    total = count1 + count2
+    print(f"\n[COMPLETE] Total triples ingested: {total} (seed.csv: {count1}, symptom_relationships.csv: {count2})")
 
 
 def verify_ingestion():

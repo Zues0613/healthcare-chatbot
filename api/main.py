@@ -72,6 +72,7 @@ from .graph.cypher import (
     get_contraindications as neo4j_get_contraindications,
     get_providers_in_city as neo4j_get_providers_in_city,
     get_safe_actions_for_metabolic_conditions as neo4j_get_safe_actions,
+    get_related_symptoms as neo4j_get_related_symptoms,
 )
 from .graph.client import neo4j_client
 from .database import db_client, db_service
@@ -100,7 +101,7 @@ app.include_router(auth_router)
 
 @app.on_event("startup")
 async def _startup() -> None:
-    """Initialize persistent database connection pool and cache on startup"""
+    """Initialize persistent database connection pools and cache on startup"""
     try:
         # Initialize PostgreSQL connection pool (persistent, stays alive)
         connected = await db_client.connect()
@@ -111,6 +112,16 @@ async def _startup() -> None:
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}", exc_info=True)
         logger.warning("Database not connected - chat history will not be saved")
+    
+    # Initialize Neo4j connection pool (persistent, stays alive)
+    try:
+        if neo4j_client.connect():
+            logger.info("Neo4j connection pool initialized successfully (persistent connection)")
+        else:
+            logger.warning("Neo4j not connected - graph queries will use fallback")
+    except Exception as e:
+        logger.error(f"Failed to initialize Neo4j: {e}", exc_info=True)
+        logger.warning("Neo4j not connected - graph queries will use fallback")
     
     # Initialize cache service (Redis)
     # Force re-initialization to ensure connection is established
@@ -242,9 +253,52 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         if ctx and "error" in ctx:
             ctx["error"] = str(ctx["error"])
 
+    # Sanitize request body to remove sensitive data (passwords, tokens, etc.)
+    sanitized_body = None
+    if exc.body:
+        try:
+            if isinstance(exc.body, dict):
+                sanitized_body = exc.body.copy()
+                # Remove sensitive fields
+                sensitive_fields = ["password", "token", "secret", "api_key", "access_token", "refresh_token"]
+                for field in sensitive_fields:
+                    if field in sanitized_body:
+                        sanitized_body[field] = "***REDACTED***"
+            elif isinstance(exc.body, str):
+                # Try to parse as JSON
+                try:
+                    body_dict = json.loads(exc.body)
+                    sanitized_body = body_dict.copy()
+                    sensitive_fields = ["password", "token", "secret", "api_key", "access_token", "refresh_token"]
+                    for field in sensitive_fields:
+                        if field in sanitized_body:
+                            sanitized_body[field] = "***REDACTED***"
+                    sanitized_body = json.dumps(sanitized_body)
+                except:
+                    sanitized_body = exc.body  # Keep original if not JSON
+            else:
+                sanitized_body = exc.body
+        except Exception:
+            sanitized_body = exc.body  # Fallback to original on error
+
+    # Extract error details for better logging
+    error_summary = []
+    for error in errors:
+        field = error.get("loc", [])
+        field_str = " -> ".join(str(f) for f in field) if field else "unknown"
+        error_type = error.get("type", "unknown")
+        error_msg = error.get("msg", "validation error")
+        error_summary.append(f"{field_str}: {error_msg} ({error_type})")
+
     logger.warning(
-        "Validation error",
-        extra={"path": request.url.path, "errors": errors, "body": exc.body},
+        f"Validation error on {request.url.path}: {', '.join(error_summary)}",
+        extra={
+            "path": request.url.path,
+            "method": request.method,
+            "errors": errors,
+            "error_summary": error_summary,
+            "body": sanitized_body,  # Use sanitized body
+        },
     )
     payload = jsonable_encoder({"detail": errors})
     return JSONResponse(status_code=422, content=payload)
@@ -761,10 +815,19 @@ def get_openai_client() -> Optional[OpenAI]:
 
     if openai_api_key:
         try:
-            _openai_client = OpenAI(api_key=openai_api_key)
+            # Configure timeout for unstable internet connections
+            # Default: 60s timeout, 30s connect timeout
+            timeout_seconds = int(os.getenv("OPENAI_TIMEOUT", "60"))
+            connect_timeout = int(os.getenv("OPENAI_CONNECT_TIMEOUT", "30"))
+            
+            _openai_client = OpenAI(
+                api_key=openai_api_key,
+                timeout=timeout_seconds,  # Total timeout for requests
+                max_retries=2,  # Retry up to 2 times on network errors
+            )
             _chat_model_openai = os.getenv("OPENAI_CHAT_MODEL", _chat_model_openai)
             logger.info(
-                "OpenAI client initialised",
+                f"OpenAI client initialised (timeout: {timeout_seconds}s, connect: {connect_timeout}s)",
                 extra={"model": _chat_model_openai},
             )
         except Exception as exc:
@@ -780,9 +843,13 @@ def get_openrouter_client() -> Optional[OpenAI]:
 
     if openrouter_api_key:
         try:
+            # Configure timeout for unstable internet connections
+            timeout_seconds = int(os.getenv("OPENROUTER_TIMEOUT", "60"))
             _openrouter_client = OpenAI(
                 api_key=openrouter_api_key,
                 base_url=OPENROUTER_BASE_URL,
+                timeout=timeout_seconds,
+                max_retries=2,
                 default_headers={
                     "HTTP-Referer": OPENROUTER_SITE_URL,
                     "X-Title": OPENROUTER_APP_NAME,
@@ -800,7 +867,17 @@ def get_openrouter_client() -> Optional[OpenAI]:
 
 
 def ensure_neo4j() -> bool:
+    """
+    Ensure Neo4j connection is available (uses persistent connection pool)
+    Connection is initialized on startup, this just ensures it's still valid
+    """
     global _neo4j_available
+    # Check if connection is already established (from startup)
+    if neo4j_client.is_connected():
+        _neo4j_available = True
+        return True
+    
+    # If not connected, try to connect (will use persistent connection pool)
     if _neo4j_available is None:
         try:
             _neo4j_available = neo4j_client.connect()
@@ -874,6 +951,30 @@ def graph_get_safe_actions(user_conditions: List[str]) -> List[Dict[str, Any]]:
         except Exception as exc:
             logger.error("Neo4j safe actions query failed", extra={"error": str(exc)})
     return graph_fallback.get_safe_actions(user_conditions)
+
+
+def graph_get_related_symptoms(symptoms: List[str]) -> List[Dict[str, Any]]:
+    """
+    Query Neo4j for symptoms related to the given symptoms through shared conditions
+    This helps identify symptom clusters (e.g., chest pain and left arm pain both related to heart attack)
+    
+    Args:
+        symptoms: List of symptom names
+        
+    Returns:
+        List of dicts with related symptoms and shared conditions
+    """
+    if not symptoms:
+        return []
+    
+    if ensure_neo4j():
+        try:
+            return neo4j_get_related_symptoms(symptoms)
+        except Exception as exc:
+            logger.error("Neo4j related symptoms query failed", extra={"error": str(exc)})
+            return []
+    # Fallback: return empty (no fallback data for symptom relationships)
+    return []
 
 
 def build_fact_blocks(facts: List[Dict[str, Any]]) -> Tuple[str, str]:
@@ -1110,6 +1211,279 @@ async def speech_to_text(
         raise HTTPException(status_code=502, detail=f"STT error: {str(exc)}") from exc
 
 
+def _extract_symptoms_from_history(conversation_history: Optional[List[Dict[str, str]]]) -> List[str]:
+    """
+    Extract symptoms mentioned in conversation history
+    
+    Args:
+        conversation_history: Previous conversation messages
+        
+    Returns:
+        List of symptom names found in conversation history
+    """
+    if not conversation_history:
+        return []
+    
+    symptoms_found = []
+    # Extract from last 4 messages (user and assistant)
+    for msg in conversation_history[-4:]:
+        content = msg.get("content", "")
+        if content:
+            # Extract symptoms from the message using the same extract_symptoms function
+            msg_symptoms = extract_symptoms(content)
+            symptoms_found.extend(msg_symptoms)
+    
+    # Remove duplicates while preserving order
+    unique_symptoms = list(dict.fromkeys(symptoms_found))
+    return unique_symptoms
+
+
+def _extract_raw_symptom_phrases(text: str) -> List[str]:
+    """
+    Extract raw symptom phrases from text (before canonical mapping)
+    This helps when "left arm pain" maps to "chest pain" but we want to detect the relationship
+    
+    Args:
+        text: Text to extract symptoms from
+        
+    Returns:
+        List of raw symptom phrases found in text
+    """
+    if not text:
+        return []
+    
+    text_lower = text.lower()
+    found_phrases = []
+    
+    # Common symptom phrases that might be mentioned (expanded list)
+    symptom_phrases = [
+        "chest pain", "chest pressure", "tightness in chest",
+        "left arm pain", "right arm pain", "arm pain", "left arm numb", "right arm numb",
+        "jaw pain", "shoulder pain", "back pain", "upper back pain",
+        "shortness of breath", "difficulty breathing",
+        "cold sweats", "sweating", "excessive sweating",
+        "nausea", "vomiting",
+        "lightheadedness", "dizziness",
+        "headache", "severe headache",
+        "abdominal pain", "stomach pain",
+        "fever", "high fever",
+        "rash", "skin rash",
+        "cough", "persistent cough"
+    ]
+    
+    for phrase in symptom_phrases:
+        if phrase in text_lower:
+            found_phrases.append(phrase)
+    
+    return found_phrases
+
+
+def _check_symptom_relationships(processed_text: str, current_symptoms: List[str], 
+                                  conversation_history: Optional[List[Dict[str, str]]]) -> List[Dict[str, Any]]:
+    """
+    Check for symptom relationships between current query and conversation history
+    
+    Args:
+        processed_text: Processed English text from current query
+        current_symptoms: Canonical symptoms extracted from current query
+        conversation_history: Previous conversation messages
+        
+    Returns:
+        List of facts containing symptom relationships or no-relationship info
+    """
+    facts = []
+    
+    if not conversation_history:
+        return facts
+    
+    # Extract canonical symptoms from conversation history
+    history_symptoms = _extract_symptoms_from_history(conversation_history)
+    
+    # Extract raw symptom phrases from history (before canonical mapping)
+    history_raw_phrases = []
+    for msg in conversation_history[-4:]:
+        content = msg.get("content", "")
+        if content:
+            raw_phrases = _extract_raw_symptom_phrases(content)
+            history_raw_phrases.extend(raw_phrases)
+    
+    # Extract raw symptom phrases from current query
+    current_raw_phrases = _extract_raw_symptom_phrases(processed_text)
+    
+    # Combine all symptoms and phrases for relationship query
+    # IMPORTANT: Include raw phrases because they might map to different nodes in Neo4j
+    # Example: "left arm pain" might map to canonical "chest pain", but Neo4j has "Left arm pain" as separate node
+    all_symptoms_for_query = list(dict.fromkeys(
+        current_symptoms + history_symptoms + current_raw_phrases + history_raw_phrases
+    ))
+    
+    # Log for debugging
+    logger.debug(
+        f"Symptom relationship check - current_symptoms: {current_symptoms}, "
+        f"current_raw: {current_raw_phrases}, history_symptoms: {history_symptoms}, "
+        f"history_raw: {history_raw_phrases}, all_for_query: {all_symptoms_for_query}"
+    )
+    
+    # Check if we should look for relationships
+    # Need symptoms in current query AND symptoms/phrases in history
+    has_current_symptoms = bool(current_symptoms or current_raw_phrases)
+    has_history_symptoms = bool(history_symptoms or history_raw_phrases)
+    
+    if has_current_symptoms and has_history_symptoms:
+        # Query for relationships using all symptoms and phrases
+        # This will find relationships for symptoms mentioned in history, including cases where
+        # current symptoms map to the same canonical (e.g., "left arm pain" → "chest pain")
+        related_symptoms = graph_get_related_symptoms(all_symptoms_for_query) if all_symptoms_for_query else []
+        logger.debug(f"Neo4j returned {len(related_symptoms) if related_symptoms else 0} related symptoms")
+        
+        if related_symptoms:
+            # Filter to only show relationships between current and history symptoms/phrases
+            relevant_relationships = []
+            current_symptoms_lower = [s.lower() for s in current_symptoms]
+            history_symptoms_lower = [s.lower() for s in history_symptoms]
+            current_raw_lower = [p.lower() for p in current_raw_phrases]
+            history_raw_lower = [p.lower() for p in history_raw_phrases]
+            
+            # Create combined lists for matching
+            all_current_lower = current_symptoms_lower + current_raw_lower
+            all_history_lower = history_symptoms_lower + history_raw_lower
+            
+            for rel in related_symptoms:
+                original = rel.get("original_symptom", "").lower()
+                related = rel.get("related_symptom", "").lower()
+                
+                # Check if this relationship connects current and history symptoms
+                # Match Neo4j symptom names with both canonical symptoms and raw phrases
+                
+                # Check if original symptom matches current (canonical or raw phrase)
+                original_in_current = (
+                    original in current_symptoms_lower or 
+                    original in current_raw_lower or
+                    any(original in phrase or phrase in original for phrase in current_raw_lower)
+                )
+                
+                # Check if related symptom matches current (canonical or raw phrase)
+                related_in_current = (
+                    related in current_symptoms_lower or 
+                    related in current_raw_lower or
+                    any(related in phrase or phrase in related for phrase in current_raw_lower)
+                )
+                
+                # Check if original symptom matches history (canonical or raw phrase)
+                original_in_history = (
+                    original in history_symptoms_lower or 
+                    original in history_raw_lower or
+                    any(original in phrase or phrase in original for phrase in history_raw_lower)
+                )
+                
+                # Check if related symptom matches history (canonical or raw phrase)
+                related_in_history = (
+                    related in history_symptoms_lower or 
+                    related in history_raw_lower or
+                    any(related in phrase or phrase in related for phrase in history_raw_lower)
+                )
+                
+                # Relationship connects current and history if:
+                # 1. One symptom is in history AND the other is in current, OR
+                # 2. Both symptoms are in both (confirming the relationship)
+                if (original_in_history and related_in_current) or (related_in_history and original_in_current):
+                    relevant_relationships.append(rel)
+                elif original_in_current and related_in_current and original_in_history and related_in_history:
+                    # Both symptoms mentioned in both - this confirms they're related
+                    relevant_relationships.append(rel)
+            
+            if relevant_relationships:
+                facts.append({
+                    "type": "symptom_relationships",
+                    "data": relevant_relationships
+                })
+                logger.info(
+                    f"Found {len(relevant_relationships)} symptom relationships between current and history. "
+                    f"Current: {all_current_lower}, History: {all_history_lower}, "
+                    f"Relationships: {[(r.get('original_symptom'), r.get('related_symptom')) for r in relevant_relationships[:3]]}"
+                )
+            else:
+                logger.debug(
+                    f"No relevant relationships found. Neo4j returned {len(related_symptoms)} relationships, "
+                    f"but none matched current ({all_current_lower}) and history ({all_history_lower})"
+                )
+        else:
+            # No relationships found - check if we should explicitly state no relationship
+            # Check if raw phrases are different (even if canonical symptoms are same)
+            current_phrases_set = set(current_raw_lower) if current_raw_phrases else set()
+            history_phrases_set = set(history_raw_lower) if history_raw_phrases else set()
+            
+            # Also check canonical symptoms
+            current_set = set([s.lower() for s in current_symptoms])
+            history_set = set([s.lower() for s in history_symptoms])
+            
+            # Symptoms are different if:
+            # 1. Canonical symptoms are different, OR
+            # 2. Raw phrases are different (even if canonical is same)
+            symptoms_different = (
+                (current_set != history_set and len(current_set & history_set) == 0) or
+                (current_phrases_set != history_phrases_set and len(current_phrases_set & history_phrases_set) == 0)
+            )
+            
+            if symptoms_different and (current_symptoms or current_raw_phrases) and (history_symptoms or history_raw_phrases):
+                # No relationship found between different symptoms
+                current_display = ", ".join(current_symptoms + current_raw_phrases[:2])
+                history_display = ", ".join(history_symptoms + history_raw_phrases[:2])
+                
+                facts.append({
+                    "type": "symptom_no_relationship",
+                    "data": {
+                        "current_symptoms": current_symptoms,
+                        "history_symptoms": history_symptoms,
+                        "current_display": current_display,
+                        "history_display": history_display
+                    }
+                })
+                logger.debug(f"No relationship found between {current_display} and {history_display}")
+    
+    return facts
+
+
+def _extract_raw_symptom_phrases(text: str) -> List[str]:
+    """
+    Extract raw symptom phrases from text (before canonical mapping)
+    This helps when "left arm pain" maps to "chest pain" but we want to detect the relationship
+    
+    Args:
+        text: Text to extract symptoms from
+        
+    Returns:
+        List of raw symptom phrases found in text
+    """
+    if not text:
+        return []
+    
+    text_lower = text.lower()
+    found_phrases = []
+    
+    # Common symptom phrases that might be mentioned (expanded list)
+    symptom_phrases = [
+        "chest pain", "chest pressure", "tightness in chest",
+        "left arm pain", "right arm pain", "arm pain", "left arm numb", "right arm numb",
+        "jaw pain", "shoulder pain", "back pain", "upper back pain",
+        "shortness of breath", "difficulty breathing",
+        "cold sweats", "sweating", "excessive sweating",
+        "nausea", "vomiting",
+        "lightheadedness", "dizziness",
+        "headache", "severe headache",
+        "abdominal pain", "stomach pain",
+        "fever", "high fever",
+        "rash", "skin rash",
+        "cough", "persistent cough"
+    ]
+    
+    for phrase in symptom_phrases:
+        if phrase in text_lower:
+            found_phrases.append(phrase)
+    
+    return found_phrases
+
+
 def _enhance_search_query_with_context(current_query: str, conversation_history: Optional[List[Dict[str, str]]]) -> str:
     """
     Enhance search query using conversation history for better RAG retrieval
@@ -1124,9 +1498,9 @@ def _enhance_search_query_with_context(current_query: str, conversation_history:
     if not conversation_history or len(conversation_history) == 0:
         return current_query
     
-    # Check if current query is a follow-up (short, uses pronouns/references)
-    follow_up_indicators = ["this", "that", "it", "these", "those", "what does", "how long", "when should", "why did"]
-    is_follow_up = any(indicator in current_query.lower() for indicator in follow_up_indicators) or len(current_query.split()) < 5
+    # Check if current query is a follow-up (short, uses pronouns/references, or mentions new symptoms)
+    follow_up_indicators = ["this", "that", "it", "these", "those", "what does", "how long", "when should", "why did", "what does this mean", "what about"]
+    is_follow_up = any(indicator in current_query.lower() for indicator in follow_up_indicators) or len(current_query.split()) < 8
     
     if not is_follow_up:
         return current_query
@@ -1193,7 +1567,7 @@ def _format_conversation_history(messages: List[Dict[str, Any]]) -> List[Dict[st
 
 async def _get_conversation_history(session_id: Optional[str]) -> List[Dict[str, str]]:
     """
-    Retrieve conversation history for a session
+    Retrieve conversation history for a session (with Redis caching for performance)
     
     Args:
         session_id: Session ID to retrieve history for
@@ -1205,14 +1579,43 @@ async def _get_conversation_history(session_id: Optional[str]) -> List[Dict[str,
         return []
     
     try:
-        # Retrieve previous messages (excluding the current one being processed)
+        # Try to get from Redis cache first (much faster than database query)
+        cache_key = f"conversation_history:{session_id}"
+        cache_start = time.perf_counter()
+        
+        if cache_service.is_available():
+            cached_history = await cache_service.get(cache_key)
+            cache_time = time.perf_counter() - cache_start
+            
+            if cached_history is not None:
+                logger.info(f"✅ CACHE HIT for conversation history: {session_id} (retrieved in {cache_time*1000:.2f}ms)")
+                return cached_history
+        
+        # If not in cache, fetch from database
+        logger.info(f"❌ CACHE MISS for conversation history: {session_id}, fetching from database")
+        db_start = time.perf_counter()
         messages = await db_service.get_session_messages(session_id, limit=20)
+        db_time = time.perf_counter() - db_start
+        logger.info(f"📊 Database query took: {db_time*1000:.2f}ms")
         
         if not messages:
+            # Cache empty result to avoid repeated database queries
+            if cache_service.is_available():
+                await cache_service.set(cache_key, [], ttl=60)  # Cache empty for 1 minute
             return []
         
         # Format messages for OpenAI API
-        return _format_conversation_history(messages)
+        formatted_history = _format_conversation_history(messages)
+        
+        # Cache the formatted history for 2 minutes (120 seconds)
+        # Shorter TTL than session_messages since conversation history changes more frequently
+        if cache_service.is_available():
+            cache_set_start = time.perf_counter()
+            await cache_service.set(cache_key, formatted_history, ttl=120)
+            cache_set_time = time.perf_counter() - cache_set_start
+            logger.info(f"💾 Cached conversation history for session: {session_id} (cached in {cache_set_time*1000:.2f}ms)")
+        
+        return formatted_history
     except Exception as e:
         logger.warning(f"Failed to retrieve conversation history: {e}", exc_info=True)
         return []
@@ -1350,8 +1753,17 @@ def process_chat_request(
     route = "vector"
     rag_results: List[Dict[str, Any]] = []
     
-    if safety_result["red_flag"]:
-        symptoms = extract_symptoms(processed_text)
+    # Extract symptoms from current query
+    current_symptoms = extract_symptoms(processed_text)
+    
+    # Check for symptom relationships when there's conversation history
+    # This helps with follow-up questions like "what about left arm pain?" after "chest pain"
+    relationship_facts = _check_symptom_relationships(processed_text, current_symptoms, conversation_history)
+    facts_en.extend(relationship_facts)
+    
+    if safety_result["red_flag"] or current_symptoms:
+        # Use current symptoms for red flag detection
+        symptoms = current_symptoms if current_symptoms else extract_symptoms(processed_text)
         red_flag_results = graph_get_red_flags(symptoms)
         if red_flag_results:
             facts_en.append({"type": "red_flags", "data": red_flag_results})
@@ -1498,6 +1910,19 @@ def process_chat_request(
                         fact_summary += f"⛔ Things to avoid — {'; '.join(avoid_phrases)}\n"
                 elif fact_group["type"] == "providers":
                     fact_summary += f"🏥 {len(fact_group['data'])} healthcare providers found\n"
+                elif fact_group["type"] == "symptom_relationships":
+                    for entry in fact_group["data"]:
+                        original = entry.get("original_symptom", "")
+                        related = entry.get("related_symptom", "")
+                        shared_conditions = entry.get("shared_conditions", [])
+                        if original and related and shared_conditions:
+                            fact_summary += f"🔗 {original} and {related} are related symptoms, both associated with: {', '.join(shared_conditions)}\n"
+                            fact_summary += f"   This suggests these symptoms may be part of the same condition cluster.\n"
+                elif fact_group["type"] == "symptom_no_relationship":
+                    current_display = fact_group["data"].get("current_display", "")
+                    history_display = fact_group["data"].get("history_display", "")
+                    fact_summary += f"❌ No relationship found between current symptoms ({current_display}) and history symptoms ({history_display})\n"
+                    fact_summary += f"   These symptoms appear to be unrelated based on available medical knowledge.\n"
             context += fact_summary
 
         if personalization_notes:
@@ -1763,10 +2188,15 @@ async def save_chat_messages_background(
     Background task to save both user and assistant messages to database.
     This runs after the response is sent to the user for faster response times.
     """
+    start_time = time.time()
+    
     if not db_client.is_connected() or not session_id:
+        logger.warning(f"Background task skipped: db_connected={db_client.is_connected()}, session_id={session_id}")
         return
     
     try:
+        logger.info(f"Background task started: Saving messages for session {session_id[:8]}... (customer: {customer_id[:8] if customer_id else 'N/A'}...)")
+        
         # Save user message
         await db_service.save_chat_message(
             session_id=session_id,
@@ -1793,12 +2223,14 @@ async def save_chat_messages_background(
         )
         
         # Invalidate cache for customer sessions and session messages after saving
+        cache_invalidated = 0
         try:
             if customer_id:
                 # Invalidate customer sessions cache (all limits)
                 for limit_val in [10, 50, 100, 200, 500, 1000]:
                     cache_key = f"sessions:{customer_id}:{limit_val}"
                     await cache_service.delete(cache_key)
+                    cache_invalidated += 1
                     logger.debug(f"Invalidated cache: {cache_key}")
             
             # Invalidate session messages cache (all limits)
@@ -1806,14 +2238,34 @@ async def save_chat_messages_background(
                 for limit_val in [10, 50, 100, 200, 500, 1000]:
                     cache_key = f"session_messages:{session_id}:{limit_val}"
                     await cache_service.delete(cache_key)
+                    cache_invalidated += 1
                     logger.debug(f"Invalidated cache: {cache_key}")
                 # Invalidate full session cache
                 await cache_service.delete(f"session_full:{session_id}")
+                cache_invalidated += 1
                 logger.debug(f"Invalidated cache: session_full:{session_id}")
+                # Invalidate conversation history cache (used for AI context)
+                conversation_history_key = f"conversation_history:{session_id}"
+                await cache_service.delete(conversation_history_key)
+                cache_invalidated += 1
+                logger.debug(f"Invalidated cache: {conversation_history_key}")
         except Exception as e:
-            logger.warning(f"Failed to invalidate cache: {e}")
+            logger.warning(f"Failed to invalidate cache: {e}", exc_info=True)
+        
+        elapsed_time = time.time() - start_time
+        logger.info(
+            f"Background task completed successfully: Saved messages for session {session_id[:8]}... "
+            f"(customer: {customer_id[:8] if customer_id else 'N/A'}...), "
+            f"invalidated {cache_invalidated} cache entries, "
+            f"took {elapsed_time:.3f}s"
+        )
     except Exception as e:
-        logger.warning(f"Failed to save chat messages in background: {e}", exc_info=True)
+        elapsed_time = time.time() - start_time
+        logger.error(
+            f"Background task failed after {elapsed_time:.3f}s: Failed to save chat messages "
+            f"for session {session_id[:8]}... (customer: {customer_id[:8] if customer_id else 'N/A'}...): {e}",
+            exc_info=True
+        )
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -1880,14 +2332,26 @@ async def chat(
                 logger.warning(f"Failed to prepare customer/session data: {e}", exc_info=True)
         
         # Retrieve conversation history for context
+        # Prefer conversation_history from request (for real-time testing), fall back to database
         conversation_history = []
-        if session_id and db_client.is_connected():
+        if request.conversation_history:
+            # Use conversation history from request (already formatted)
+            conversation_history = request.conversation_history
+            logger.info(f"Using conversation history from request: {len(conversation_history)} messages")
+        elif session_id and db_client.is_connected():
+            # Fall back to database if not provided in request
             try:
+                logger.info(f"Retrieving conversation history for session_id: {session_id}")
                 conversation_history = await _get_conversation_history(session_id)
                 if conversation_history:
-                    logger.debug(f"Retrieved {len(conversation_history)} previous messages for context")
+                    logger.info(f"Retrieved {len(conversation_history)} previous messages for context")
+                    logger.debug(f"Conversation history: {[msg.get('role') + ': ' + msg.get('content', '')[:50] for msg in conversation_history[:3]]}")
+                else:
+                    logger.warning(f"No conversation history found for session_id: {session_id}")
             except Exception as e:
                 logger.warning(f"Failed to retrieve conversation history: {e}", exc_info=True)
+        else:
+            logger.debug(f"No conversation history - session_id: {session_id}, db_connected: {db_client.is_connected() if db_client else False}")
         
         # Process chat request (no caching for chat responses)
         # This is the main work - generate AI response
@@ -1967,6 +2431,9 @@ async def process_chat_request_stream(
     response_style = getattr(request, "response_style", "native")
     
     # Language detection and translation to English (same as regular endpoint)
+    pipeline_timings = {}
+    total_start = time.perf_counter()
+    
     detection_start = time.perf_counter()
     openai_client = get_openai_client()
     model = _chat_model_openai
@@ -1974,17 +2441,24 @@ async def process_chat_request_stream(
     from .pipeline_functions import detect_language_only, translate_to_english
     
     detected_lang = None
+    romanized_start = time.perf_counter()
     romanized_lang = detect_romanized_language(text)
+    pipeline_timings["romanized_detection"] = time.perf_counter() - romanized_start
+    
     if romanized_lang:
         detected_lang = romanized_lang
+        logger.info(f"⚡ Fast romanized language detection: {detected_lang} ({pipeline_timings['romanized_detection']*1000:.2f}ms)")
     
     if not detected_lang:
         if openai_client and model:
+            lang_detect_start = time.perf_counter()
             detected_lang = detect_language_only(
                 client=openai_client,
                 model=model,
                 user_text=text
             )
+            pipeline_timings["language_detection"] = time.perf_counter() - lang_detect_start
+            logger.info(f"🌐 Language detection via API: {detected_lang} ({pipeline_timings.get('language_detection', 0)*1000:.2f}ms)")
         else:
             detected_lang = detect_language(text) if text else DEFAULT_LANG
             detected_lang = detected_lang if detected_lang in SUPPORTED_LANG_CODES else DEFAULT_LANG
@@ -1995,35 +2469,55 @@ async def process_chat_request_stream(
     # Translate to English if needed
     if detected_lang == "en":
         processed_text = text
+        logger.info(f"✅ Text already in English - skipping translation")
     else:
         if openai_client and model:
+            translate_start = time.perf_counter()
             processed_text = translate_to_english(
                 client=openai_client,
                 model=model,
                 user_text=text,
                 source_language=detected_lang
             )
+            pipeline_timings["translation_to_english"] = time.perf_counter() - translate_start
+            logger.info(f"🔄 Translation to English: {pipeline_timings.get('translation_to_english', 0)*1000:.2f}ms")
         else:
             processed_text = translate_text(text, target_lang="en", src_lang=detected_lang)
     
+    pipeline_timings["detection_total"] = time.perf_counter() - detection_start
+    
     # Safety analysis
+    safety_start = time.perf_counter()
     safety_result = detect_red_flags(processed_text, "en")
     mental_health_en = detect_mental_health_crisis(processed_text, "en")
     pregnancy_alert_en = detect_pregnancy_emergency(processed_text)
+    pipeline_timings["safety_analysis"] = time.perf_counter() - safety_start
     
     # RAG retrieval - enhance query with conversation history for better context
+    rag_start = time.perf_counter()
     enhanced_query = _enhance_search_query_with_context(processed_text, conversation_history)
     rag_results = retrieve(enhanced_query, k=4)
+    pipeline_timings["rag_retrieval"] = time.perf_counter() - rag_start
     context = "\n\n".join([r["chunk"] for r in rag_results]) if rag_results else ""
     citations = [
         {"source": r["source"], "id": r["id"], "topic": r.get("topic")}
         for r in rag_results
     ]
     
+    # Extract symptoms from current query
+    current_symptoms = extract_symptoms(processed_text)
+    
     # Build facts
     facts_en: List[Dict[str, Any]] = []
-    if safety_result["red_flag"]:
-        symptoms = extract_symptoms(processed_text)
+    
+    # Check for symptom relationships when there's conversation history
+    # This helps with follow-up questions like "what about left arm pain?" after "chest pain"
+    relationship_facts = _check_symptom_relationships(processed_text, current_symptoms, conversation_history)
+    facts_en.extend(relationship_facts)
+    
+    if safety_result["red_flag"] or current_symptoms:
+        # Use current symptoms for red flag detection
+        symptoms = current_symptoms if current_symptoms else extract_symptoms(processed_text)
         red_flag_results = graph_get_red_flags(symptoms)
         if red_flag_results:
             facts_en.append({"type": "red_flags", "data": red_flag_results})
@@ -2055,9 +2549,11 @@ async def process_chat_request_stream(
     
     # Stream the answer generation
     answer_en_chunks = []
+    generation_start = time.perf_counter()
     if openai_client and model:
         # Use context if available, otherwise use empty string
         rag_context = context if context else ""
+        logger.info(f"🤖 Starting AI generation with model: {model}")
         async for chunk in generate_final_answer_stream(
             client=openai_client,
             model=model,
@@ -2070,6 +2566,8 @@ async def process_chat_request_stream(
             answer_en_chunks.append(chunk)
             # Send chunk to client (as JSON for SSE)
             yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+    pipeline_timings["ai_generation"] = time.perf_counter() - generation_start
+    logger.info(f"✅ AI generation completed: {pipeline_timings['ai_generation']:.2f}s ({len(''.join(answer_en_chunks))} chars)")
     else:
         # Fallback: generate a simple response if no client/model available
         fallback_answer = build_fallback_answer(
@@ -2089,35 +2587,57 @@ async def process_chat_request_stream(
     answer_en = "".join(answer_en_chunks)
     
     # Translate if needed
+    translate_back_start = time.perf_counter()
     if detected_lang == "en":
         answer = answer_en
+        logger.info(f"✅ Answer already in English - skipping translation back")
     elif detected_lang != "en" and openai_client and model:
+        logger.info(f"🔄 Translating answer back to {detected_lang}...")
         answer = translate_to_user_language(
             client=openai_client,
             model=model,
             english_text=answer_en,
             target_language=detected_lang,
         )
+        pipeline_timings["translation_back"] = time.perf_counter() - translate_back_start
+        logger.info(f"✅ Translation back completed: {pipeline_timings.get('translation_back', 0)*1000:.2f}ms")
         # Send final translated answer
         yield f"data: {json.dumps({'type': 'translated', 'content': answer})}\n\n"
     else:
         answer = answer_en
     
     # Add disclaimer
+    disclaimer_start = time.perf_counter()
     if not safety_result["red_flag"]:
         disclaimer_en = DISCLAIMER_EN
         if detected_lang == "en":
             disclaimer = disclaimer_en
         elif detected_lang != "en" and openai_client and model:
+            logger.info(f"🔄 Translating disclaimer to {detected_lang}...")
             disclaimer = translate_to_user_language(
                 client=openai_client,
                 model=model,
                 english_text=disclaimer_en,
                 target_language=detected_lang,
             )
+            pipeline_timings["disclaimer_translation"] = time.perf_counter() - disclaimer_start
         else:
             disclaimer = disclaimer_en
         answer += "\n\n" + disclaimer
+    
+    # Log total pipeline timing
+    total_time = time.perf_counter() - total_start
+    pipeline_timings["total"] = total_time
+    
+    logger.info(
+        f"⏱️ PIPELINE TIMING SUMMARY: "
+        f"Total={total_time:.2f}s | "
+        f"Detection={pipeline_timings.get('detection_total', 0):.2f}s | "
+        f"Safety={pipeline_timings.get('safety_analysis', 0):.3f}s | "
+        f"RAG={pipeline_timings.get('rag_retrieval', 0):.3f}s | "
+        f"AI={pipeline_timings.get('ai_generation', 0):.2f}s | "
+        f"Translation={pipeline_timings.get('translation_back', 0):.3f}s"
+    )
     
     # Send completion message with full response metadata
     safety_payload = {
@@ -2199,17 +2719,29 @@ async def chat_stream(
             except HTTPException:
                 raise
             except Exception as e:
-                logger.warning(f"Failed to prepare customer/session data: {e}", exc_info=True)
+                    logger.warning(f"Failed to prepare customer/session data: {e}", exc_info=True)
         
         # Retrieve conversation history for context
+        # Prefer conversation_history from request (for real-time testing), fall back to database
         conversation_history = []
-        if session_id and db_client.is_connected():
+        if request.conversation_history:
+            # Use conversation history from request (already formatted)
+            conversation_history = request.conversation_history
+            logger.info(f"Using conversation history from request: {len(conversation_history)} messages")
+        elif session_id and db_client.is_connected():
+            # Fall back to database if not provided in request
             try:
+                logger.info(f"Retrieving conversation history for session_id: {session_id}")
                 conversation_history = await _get_conversation_history(session_id)
                 if conversation_history:
-                    logger.debug(f"Retrieved {len(conversation_history)} previous messages for context")
+                    logger.info(f"Retrieved {len(conversation_history)} previous messages for context")
+                    logger.debug(f"Conversation history: {[msg.get('role') + ': ' + msg.get('content', '')[:50] for msg in conversation_history[:3]]}")
+                else:
+                    logger.warning(f"No conversation history found for session_id: {session_id}")
             except Exception as e:
                 logger.warning(f"Failed to retrieve conversation history: {e}", exc_info=True)
+        else:
+            logger.debug(f"No conversation history - session_id: {session_id}, db_connected: {db_client.is_connected() if db_client else False}")
         
         # Stream the response
         async def generate():
@@ -2814,6 +3346,8 @@ async def delete_session(
                 await cache_service.delete(cache_key)
             # Invalidate full session cache
             await cache_service.delete(f"session_full:{session_id}")
+            # Invalidate conversation history cache
+            await cache_service.delete(f"conversation_history:{session_id}")
         except Exception as e:
             logger.warning(f"Failed to invalidate cache after session deletion: {e}")
     

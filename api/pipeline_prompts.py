@@ -86,13 +86,23 @@ Your response MUST be thorough and well-structured, BUT ONLY using information f
 GENERAL GUIDELINES:
 - For MEDICAL FACTS: Your response MUST be based EXCLUSIVELY on the information in the "Context from knowledge base" section above
 - For QUESTION UNDERSTANDING: Use conversation history to understand follow-up questions and what the user is referring to
+- **SYMPTOM RELATIONSHIPS**: 
+  - If the "Relevant facts from database" section shows "🔗 RELATED SYMPTOMS", this means symptoms mentioned in the conversation are related through shared medical conditions. Use this information to explain how symptoms are connected (e.g., "chest pain and left arm pain are both associated with heart attack, suggesting they may be part of the same condition"). This helps answer follow-up questions about new symptoms in context of previous symptoms.
+  - If the "Relevant facts from database" section shows "❌ NO SYMPTOM RELATIONSHIP FOUND", this means symptoms mentioned in the current question and previous conversation are NOT related. You MUST explicitly state this to the user. For example: "Based on my knowledge base, there is no established medical relationship between [current symptoms] and [previous symptoms]. These symptoms appear to be unrelated." Do NOT say "I don't have information" - instead, clearly state that no relationship exists.
 - If the user's question is a follow-up (references previous conversation), first understand what they're asking about from the conversation history, then use the knowledge base context to provide factual information about that topic
 - If the context is empty or says "No additional context available", you must respond by stating that you don't have sufficient information in the knowledge base to answer the question
 - If the context doesn't fully answer the question, acknowledge this honestly and clearly state what information is missing
 - Be empathetic, supportive, and reassuring
 - Use clear, simple language that's easy to understand
 - Provide specific, actionable advice rather than vague statements, using information from the context
-- Structure your response clearly with natural flow (you can use paragraphs, but avoid markdown formatting)
+- **FORMATTING REQUIREMENT**: Structure your response using proper Markdown formatting for excellent readability:
+  * Use **## Subheadings** (h2) for main sections like "## Understanding Your Concern", "## Causes", "## Management", "## When to See a Doctor"
+  * Use **### Sub-subheadings** (h3) for subsections when needed
+  * Use **bullet points** (- or *) for lists of symptoms, causes, steps, or recommendations
+  * Use **numbered lists** (1., 2., 3.) for sequential steps or ordered information
+  * Use **bold text** (**text**) to highlight important points or key terms
+  * Use **paragraphs** for detailed explanations between sections
+  * Ensure proper spacing between sections for readability
 - When the context provides detailed information, make your response DETAILED and COMPREHENSIVE - aim for thoroughness, not brevity
 - Always emphasize that this is general information, not medical advice
 - For emergencies or serious symptoms, recommend consulting a healthcare professional immediately
@@ -105,7 +115,7 @@ VALIDATION CHECK BEFORE RESPONDING:
 4. If sufficient information exists in the context → Provide a detailed, comprehensive answer using that information, making it clear you understand what they're asking about from the conversation
 5. If insufficient information exists in the context → Clearly state the limitation and recommend consulting a healthcare professional
 
-Respond ONLY with the detailed answer text in English. Do not include any explanations, metadata, JSON formatting, or markdown. Just provide the comprehensive, detailed answer in natural paragraph form, using ONLY information from the context above."""
+Respond ONLY with the detailed answer text in English using proper Markdown formatting (headings, bullet points, numbered lists, bold text). Do not include any explanations, metadata, or JSON formatting. Provide a well-formatted, comprehensive, detailed answer using ONLY information from the context above."""
 
 # Translation back to user language prompt
 TRANSLATION_BACK_PROMPT = """You are a professional medical translator. Translate the following English medical response to {target_language}.
@@ -124,8 +134,10 @@ IMPORTANT:
 - Use the NATIVE SCRIPT of {target_language} (NOT romanized/English script)
 - Keep medical terms clear and understandable in the native script
 - Maintain the same tone and structure
-- Do NOT add any explanations, metadata, or formatting
-- Respond ONLY with the translated text in native script
+- **PRESERVE ALL MARKDOWN FORMATTING**: Keep all headings (##, ###), bullet points (-, *), numbered lists (1., 2., 3.), and bold text (**text**) exactly as they appear in the original
+- Translate only the text content, but keep all Markdown formatting symbols intact
+- Do NOT add any explanations, metadata, or extra formatting
+- Respond ONLY with the translated text in native script with preserved Markdown formatting
 
 English text to translate:
 {english_text}
@@ -181,6 +193,31 @@ def format_facts_context(facts: list) -> str:
                 if phone:
                     provider_info += f" - Phone: {phone}"
                 context_parts.append(provider_info)
+        
+        elif fact_type == "symptom_relationships":
+            context_parts.append("🔗 RELATED SYMPTOMS:")
+            for entry in fact_data:
+                original = entry.get("original_symptom", "")
+                related = entry.get("related_symptom", "")
+                shared_conditions = entry.get("shared_conditions", [])
+                if original and related and shared_conditions:
+                    context_parts.append(
+                        f"- {original} and {related} are related symptoms, both associated with: {', '.join(shared_conditions)}"
+                    )
+                    context_parts.append(
+                        f"  This suggests these symptoms may be part of the same condition cluster."
+                    )
+        
+        elif fact_type == "symptom_no_relationship":
+            current_display = fact_data.get("current_display", "")
+            history_display = fact_data.get("history_display", "")
+            context_parts.append("❌ NO SYMPTOM RELATIONSHIP FOUND:")
+            context_parts.append(
+                f"- Based on the knowledge base, there is no established medical relationship between the symptoms mentioned in the current question ({current_display}) and the symptoms mentioned earlier in the conversation ({history_display})."
+            )
+            context_parts.append(
+                f"  These symptoms appear to be unrelated based on available medical knowledge."
+            )
     
     return "\n".join(context_parts) if context_parts else ""
 

@@ -4,6 +4,8 @@ Pipeline functions for the multilingual healthcare chatbot
 
 import json
 import logging
+import os
+import time
 from typing import Dict, Optional, Tuple, Any, List
 from openai import OpenAI
 from openai import APIError, RateLimitError
@@ -87,6 +89,7 @@ Do NOT translate. Only detect the language code."""
                 ],
                 max_tokens=50,
                 temperature=0.1,
+                timeout=30.0,  # 30 second timeout for language detection
             )
             
             response_text = response.choices[0].message.content.strip()
@@ -311,7 +314,7 @@ async def generate_final_answer_stream(
     messages = [
         {
             "role": "system",
-            "content": "You are a knowledgeable, empathetic healthcare assistant. For medical facts, use ONLY the indexed knowledge base provided in the context. For understanding follow-up questions, use conversation history to understand what the user is asking about. Once you understand the question from conversation history, use the knowledge base context to provide factual medical information. Never make up or invent medical facts. Always give thorough responses when context is available, covering understanding the concern, causes, solutions, and when to seek medical attention."
+            "content": "You are a knowledgeable, empathetic healthcare assistant. For medical facts, use ONLY the indexed knowledge base provided in the context. For understanding follow-up questions, use conversation history to understand what the user is asking about. Once you understand the question from conversation history, use the knowledge base context to provide factual medical information. Never make up or invent medical facts. Always give thorough responses when context is available, covering understanding the concern, causes, solutions, and when to seek medical attention. Format your response using proper Markdown: use ## headings for main sections, ### for subsections, bullet points (-) for lists, numbered lists (1., 2., 3.) for sequential steps, and **bold** for important terms. Structure your response with clear sections and proper spacing for excellent readability."
         }
     ]
     
@@ -330,29 +333,59 @@ async def generate_final_answer_stream(
     
     for attempt in range(retry_count):
         try:
+            # Use longer timeout for AI generation (main bottleneck)
+            # But still limit it to prevent hanging on unstable connections
+            # Configurable via env var for platform compatibility (Vercel Pro: 60s, Render: 90s+)
+            generation_timeout = float(os.getenv("AI_GENERATION_TIMEOUT", "90.0"))
+            
             stream = client.chat.completions.create(
                 model=model,
                 messages=messages,
-                max_tokens=2000,  # Increased for detailed, comprehensive responses
+                max_tokens=1500,  # Optimized: Balance between detailed responses and speed (was 2000)
                 temperature=0.7,
-                stream=True,  # Enable streaming
+                stream=True,  # Enable streaming for faster perceived response
+                timeout=generation_timeout,
             )
             
+            chunk_count = 0
+            start_time = time.time()
             for chunk in stream:
                 if chunk.choices[0].delta.content:
                     content = chunk.choices[0].delta.content
+                    chunk_count += 1
                     yield content
+                    
+                    # Log progress every 50 chunks to monitor streaming
+                    if chunk_count % 50 == 0:
+                        elapsed = time.time() - start_time
+                        logger.debug(f"Streaming progress: {chunk_count} chunks, {elapsed:.1f}s elapsed")
             
+            total_time = time.time() - start_time
+            logger.info(f"✅ AI generation stream completed: {chunk_count} chunks in {total_time:.2f}s")
             return  # Successfully completed
             
         except Exception as e:
-            logger.warning(f"Error in generate_final_answer_stream (attempt {attempt + 1}): {e}")
-            if attempt < retry_count - 1:
-                import asyncio
-                await asyncio.sleep(1)
+            error_msg = str(e)
+            is_timeout = "timeout" in error_msg.lower() or "timed out" in error_msg.lower()
+            is_network = "network" in error_msg.lower() or "connection" in error_msg.lower()
+            
+            if is_timeout or is_network:
+                logger.warning(f"⚠️ Network/timeout error in generate_final_answer_stream (attempt {attempt + 1}/{retry_count}): {error_msg}")
             else:
-                logger.error(f"Failed to generate answer after {retry_count} attempts")
-                yield "I apologize, but I encountered an error processing your request. Please try again."
+                logger.warning(f"Error in generate_final_answer_stream (attempt {attempt + 1}/{retry_count}): {e}")
+            
+            if attempt < retry_count - 1:
+                # Exponential backoff: 1s, 2s, 4s
+                wait_time = 2 ** attempt
+                logger.info(f"⏳ Retrying in {wait_time}s...")
+                import asyncio
+                await asyncio.sleep(wait_time)
+            else:
+                logger.error(f"❌ Failed to generate answer after {retry_count} attempts")
+                if is_timeout or is_network:
+                    yield "I apologize, but I'm experiencing network connectivity issues. Please check your internet connection and try again."
+                else:
+                    yield "I apologize, but I encountered an error processing your request. Please try again."
                 return
     
     yield "I apologize, but I encountered an error processing your request. Please try again."
@@ -404,7 +437,7 @@ def generate_final_answer(
     messages = [
         {
             "role": "system",
-            "content": "You are a knowledgeable, empathetic healthcare assistant. For medical facts, use ONLY the indexed knowledge base provided in the context. For understanding follow-up questions, use conversation history to understand what the user is asking about. Once you understand the question from conversation history, use the knowledge base context to provide factual medical information. Never make up or invent medical facts. Always give thorough responses when context is available, covering understanding the concern, causes, solutions, and when to seek medical attention."
+            "content": "You are a knowledgeable, empathetic healthcare assistant. For medical facts, use ONLY the indexed knowledge base provided in the context. For understanding follow-up questions, use conversation history to understand what the user is asking about. Once you understand the question from conversation history, use the knowledge base context to provide factual medical information. Never make up or invent medical facts. Always give thorough responses when context is available, covering understanding the concern, causes, solutions, and when to seek medical attention. Format your response using proper Markdown: use ## headings for main sections, ### for subsections, bullet points (-) for lists, numbered lists (1., 2., 3.) for sequential steps, and **bold** for important terms. Structure your response with clear sections and proper spacing for excellent readability."
         }
     ]
     
@@ -426,8 +459,9 @@ def generate_final_answer(
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
-                max_tokens=2000,  # Increased for detailed, comprehensive responses
+                max_tokens=1500,  # Optimized: Balance between detailed responses and speed (was 2000)
                 temperature=0.7,
+                timeout=float(os.getenv("AI_GENERATION_TIMEOUT", "90.0")),  # Configurable timeout
             )
             
             answer = response.choices[0].message.content.strip()
@@ -499,7 +533,7 @@ def translate_to_user_language(
     
     for attempt in range(retry_count):
         try:
-            system_content = f"You are a professional medical translator. Translate accurately to {lang_name} in NATIVE SCRIPT (NOT romanized/English script). For example, Tamil must be in Tamil script (தமிழ்), Telugu in Telugu script (తెలుగు), Kannada in Kannada script (ಕನ್ನಡ), Malayalam in Malayalam script (മലയാളം), and Hindi in Devanagari script (हिंदी)."
+            system_content = f"You are a professional medical translator. Translate accurately to {lang_name} in NATIVE SCRIPT (NOT romanized/English script). For example, Tamil must be in Tamil script (தமிழ்), Telugu in Telugu script (తెలుగు), Kannada in Kannada script (ಕನ್ನಡ), Malayalam in Malayalam script (മലയാളം), and Hindi in Devanagari script (हिंदी). PRESERVE ALL MARKDOWN FORMATTING: Keep all headings (##, ###), bullet points (-, *), numbered lists (1., 2., 3.), and bold text (**text**) exactly as they appear. Translate only the text content, keeping all Markdown symbols intact."
             
             response = client.chat.completions.create(
                 model=model,
@@ -515,6 +549,7 @@ def translate_to_user_language(
                 ],
                 max_tokens=1000,
                 temperature=0.3,
+                timeout=60.0,  # 60 second timeout for translation back
             )
             
             translated = response.choices[0].message.content.strip()

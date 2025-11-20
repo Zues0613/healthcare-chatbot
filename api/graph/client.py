@@ -1,9 +1,11 @@
 from neo4j import GraphDatabase
 import os
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
 
+logger = logging.getLogger("health_assistant")
 
 class Neo4jClient:
     def __init__(self):
@@ -13,43 +15,93 @@ class Neo4jClient:
         self.database = os.getenv("NEO4J_DATABASE")
         self.trust_all = os.getenv("NEO4J_TRUST_ALL_CERTS", "false").lower() in {"1", "true", "yes"}
         self.driver = None
+        self._is_connected = False
     
     def connect(self):
-        """Connect to Neo4j database"""
-        try:
-            uri = self.uri
-            if self.trust_all:
-                uri = (
-                    uri.replace("neo4j+s://", "neo4j+ssc://", 1)
-                    .replace("bolt+s://", "bolt+ssc://", 1)
+        """
+        Connect to Neo4j database (persistent connection)
+        Creates a connection pool that's reused across requests
+        """
+        # If already connected and driver is valid, return True
+        if self.driver and self._is_connected:
+            try:
+                # Quick health check
+                session_args = {}
+                if self.database:
+                    session_args["database"] = self.database
+                with self.driver.session(**session_args) as session:
+                    session.run("RETURN 1 AS test").single()
+                return True
+            except Exception:
+                # Connection lost, need to reconnect
+                logger.warning("Neo4j connection lost, reconnecting...")
+                self._is_connected = False
+                if self.driver:
+                    try:
+                        self.driver.close()
+                    except:
+                        pass
+                    self.driver = None
+        
+        # Connect if not already connected
+        if not self.driver:
+            try:
+                uri = self.uri
+                if self.trust_all:
+                    uri = (
+                        uri.replace("neo4j+s://", "neo4j+ssc://", 1)
+                        .replace("bolt+s://", "bolt+ssc://", 1)
+                    )
+
+                # Create driver with connection pool (persistent connection)
+                # Neo4j driver manages connection pooling internally
+                self.driver = GraphDatabase.driver(
+                    uri,
+                    auth=(self.user, self.password),
+                    # Connection pool settings for better performance
+                    max_connection_lifetime=3600,  # 1 hour
+                    max_connection_pool_size=50,   # Pool size
+                    connection_acquisition_timeout=30,  # 30 seconds timeout
                 )
+                
+                # Test connection
+                session_args = {}
+                if self.database:
+                    session_args["database"] = self.database
 
-            self.driver = GraphDatabase.driver(
-                uri,
-                auth=(self.user, self.password)
-            )
-            # Test connection
-            session_args = {}
-            if self.database:
-                session_args["database"] = self.database
-
-            with self.driver.session(**session_args) as session:
-                result = session.run("RETURN 1 AS test")
-                result.single()
-            print(f"[OK] Connected to Neo4j at {uri}")
-            return True
-        except Exception as e:
-            print(f"[ERROR] Failed to connect to Neo4j: {e}")
-            return False
+                with self.driver.session(**session_args) as session:
+                    result = session.run("RETURN 1 AS test")
+                    result.single()
+                
+                self._is_connected = True
+                logger.info(f"Neo4j connection pool initialized at {uri}")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to connect to Neo4j: {e}")
+                self._is_connected = False
+                return False
+        
+        return self._is_connected
+    
+    def is_connected(self) -> bool:
+        """Check if Neo4j is connected"""
+        return self._is_connected and self.driver is not None
     
     def close(self):
-        """Close the connection"""
+        """Close the connection pool"""
         if self.driver:
-            self.driver.close()
+            try:
+                self.driver.close()
+                logger.info("Neo4j connection pool closed")
+            except Exception as e:
+                logger.warning(f"Error closing Neo4j connection: {e}")
+            finally:
+                self.driver = None
+                self._is_connected = False
     
     def run_cypher(self, query: str, params: dict = None):
         """
-        Execute a Cypher query
+        Execute a Cypher query using persistent connection pool
         
         Args:
             query: Cypher query string
@@ -58,16 +110,30 @@ class Neo4jClient:
         Returns:
             List of records
         """
-        if not self.driver:
-            raise Exception("Not connected to Neo4j. Call connect() first.")
+        # Ensure connection is established (lazy connection if needed)
+        if not self.is_connected():
+            if not self.connect():
+                raise Exception("Not connected to Neo4j and connection attempt failed.")
         
         session_args = {}
         if self.database:
             session_args["database"] = self.database
 
-        with self.driver.session(**session_args) as session:
-            result = session.run(query, params or {})
-            return [record.data() for record in result]
+        try:
+            # Use connection pool (driver manages session reuse)
+            with self.driver.session(**session_args) as session:
+                result = session.run(query, params or {})
+                return [record.data() for record in result]
+        except Exception as e:
+            # Connection might have dropped, try to reconnect once
+            logger.warning(f"Neo4j query failed, attempting reconnect: {e}")
+            self._is_connected = False
+            if self.connect():
+                # Retry query once
+                with self.driver.session(**session_args) as session:
+                    result = session.run(query, params or {})
+                    return [record.data() for record in result]
+            raise
 
 
 # Global client instance

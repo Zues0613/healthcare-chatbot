@@ -63,6 +63,7 @@ class ChatRequest(BaseModel):
     debug: bool = False
     customer_id: Optional[str] = None
     session_id: Optional[str] = None
+    conversation_history: Optional[List[Dict[str, str]]] = Field(default_factory=list)
 
     @field_validator("text")
     @classmethod

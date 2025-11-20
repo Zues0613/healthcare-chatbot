@@ -110,11 +110,13 @@ class DatabaseService:
         try:
             if session_id:
                 # Try to get existing session
+                logger.info(f"Looking for existing session: session_id={session_id}, customer_id={customer_id}")
                 session = await db_client.fetchrow(
                     "SELECT * FROM chat_sessions WHERE id = $1 AND customer_id = $2",
                     session_id, customer_id
                 )
                 if session:
+                    logger.info(f"Found existing session: {session_id}")
                     # Update language if provided
                     if language:
                         session = await db_client.fetchrow(
@@ -127,9 +129,12 @@ class DatabaseService:
                             language, session_id
                         )
                     return dict(session) if session else None
+                else:
+                    logger.warning(f"Session not found: session_id={session_id}, customer_id={customer_id}. Creating new session.")
             
             # Create new session
             new_session_id = str(uuid.uuid4())
+            logger.info(f"Creating new session: new_session_id={new_session_id}, customer_id={customer_id}")
             session = await db_client.fetchrow(
                 """
                 INSERT INTO chat_sessions (id, customer_id, language, created_at, updated_at)
@@ -419,6 +424,7 @@ class DatabaseService:
             return []
         
         try:
+            logger.info(f"Retrieving messages for session_id: {session_id}, limit: {limit}")
             messages = await db_client.fetch(
                 """
                 SELECT * FROM chat_messages
@@ -428,6 +434,7 @@ class DatabaseService:
                 """,
                 session_id, limit
             )
+            logger.info(f"Found {len(messages)} messages for session_id: {session_id}")
             return [dict(m) for m in messages]
         except Exception as e:
             logger.error(f"Error retrieving session messages: {e}", exc_info=True)
