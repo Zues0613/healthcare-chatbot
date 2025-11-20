@@ -200,10 +200,11 @@ const dataHighlights = [
 export default function LandingPage() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(16,185,129,0.25),transparent_55%),radial-gradient(circle_at_85%_15%,rgba(34,197,94,0.24),transparent_55%),linear-gradient(180deg,rgba(2,6,23,0.92),rgba(2,6,23,0.97))]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(16,185,129,0.25),transparent_55%),radial-gradient(circle_at_85%_15%,rgba(34,197,94,0.24),transparent_55%),radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.20),transparent_60%),radial-gradient(circle_at_20%_90%,rgba(34,197,94,0.18),transparent_55%),linear-gradient(180deg,rgba(2,6,23,0.92),rgba(2,6,23,0.92))]" />
       <div className={gradientSpot("top-[-8rem] left-[-6rem]", "bg-emerald-500/40", "h-72 w-72")} />
       <div className={gradientSpot("top-[-4rem] right-[-4rem]", "bg-green-500/35", "h-64 w-64")} />
-      <div className={gradientSpot("bottom-[-6rem] right-[-10rem]", "bg-teal-500/30", "h-80 w-80")} />
+      <div className={gradientSpot("bottom-[-6rem] right-[-10rem]", "bg-teal-500/40", "h-80 w-80")} />
+      <div className={gradientSpot("bottom-[-8rem] left-[-8rem]", "bg-emerald-500/35", "h-72 w-72")} />
 
       <header className="relative z-10 border-b border-white/5 bg-slate-950/60 backdrop-blur-xl">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 sm:px-6 sm:py-5 md:py-6 lg:px-10">
@@ -219,29 +220,29 @@ export default function LandingPage() {
             </div>
           </div>
           <nav className="hidden items-center gap-6 text-xs text-slate-200 md:flex md:gap-8 md:text-sm">
-            <a className="hover:text-white" href="#features">
+            <a className="text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" href="#features">
               Features
             </a>
-            <a className="hover:text-white" href="#workflows">
+            <a className="text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" href="#workflows">
               Workflows
             </a>
-            <a className="hover:text-white" href="#insights">
+            <a className="text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" href="#insights">
               Insights
             </a>
-            <a className="hover:text-white" href="#cta">
+            <a className="text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" href="#cta">
               Get Started
             </a>
           </nav>
           <div className="flex items-center gap-2 sm:gap-3">
             <Link
               href="/landing#insights"
-              className="hidden rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:border-white/30 hover:text-white sm:inline-flex sm:px-4 sm:py-2 sm:text-sm"
+              className="hidden rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 sm:inline-flex sm:px-4 sm:py-2 sm:text-sm"
             >
               View Insights
             </Link>
             <Link
               href="/auth"
-              className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 px-3 py-1.5 text-xs font-semibold text-white shadow-[0_18px_40px_rgba(16,185,129,0.35)] transition hover:scale-[1.03] sm:gap-2 sm:px-4 sm:py-2 sm:text-sm"
+              className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 px-3 py-1.5 text-xs font-semibold text-white shadow-[0_18px_40px_rgba(16,185,129,0.35)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 sm:gap-2 sm:px-4 sm:py-2 sm:text-sm"
             >
               Get Started
             </Link>
@@ -267,42 +268,40 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section id="workflows" className="mx-auto w-full max-w-6xl px-6 py-16 lg:px-10 lg:py-20">
-          <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-            <div className="space-y-8 rounded-[32px] border border-white/10 bg-gradient-to-br from-teal-900/60 via-slate-950/80 to-slate-950/90 p-8 shadow-[0_35px_95px_rgba(15,23,42,0.6)] backdrop-blur-2xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-200/80">
-                Step-by-step clarity
-              </p>
-              <div className="space-y-4">
-                <h2 className="text-3xl font-semibold text-white sm:text-4xl">Workflows designed for real people.</h2>
-                <p className="max-w-2xl text-sm leading-relaxed text-slate-200/85">
-                  Blend empathetic copy, actionable steps, and data-rich context. Customize journeys for health
-                  programs, virtual clinics, or benefit providers — without breaking the narrative.
+        <section id="workflows" className="mx-auto w-full max-w-7xl px-6 py-16 lg:px-10 lg:py-20">
+          <div className="mb-8 flex flex-col gap-3 text-center sm:mb-10 sm:gap-4">
+            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-200/80 sm:text-xs">Step-by-step clarity</p>
+            <h2 className="text-2xl font-semibold text-white sm:text-3xl md:text-4xl">Workflows designed for real people.</h2>
+            <p className="mx-auto max-w-3xl text-xs leading-relaxed text-slate-200/80 sm:text-sm">
+              Blend empathetic copy, actionable steps, and data-rich context. Customize journeys for health
+              programs, virtual clinics, or benefit providers — without breaking the narrative.
+            </p>
+          </div>
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {workflows.map((workflow, index) => (
+              <div
+                key={workflow.title}
+                className="group relative overflow-hidden rounded-[26px] border border-white/10 bg-gradient-to-br from-slate-950 via-slate-950/90 to-teal-950/80 p-6 text-sm text-slate-100 shadow-[0_28px_80px_rgba(15,23,42,0.45)] transition-all duration-300 hover:border-emerald-400/50 hover:shadow-[0_35px_95px_rgba(16,185,129,0.35)] hover:scale-[1.03] hover:-translate-y-1"
+              >
+                <div className="pointer-events-none absolute inset-0 -z-10 opacity-0 blur-2xl transition-opacity duration-300 group-hover:opacity-60 bg-gradient-to-br from-emerald-500/20 via-green-500/15 to-teal-500/20" aria-hidden />
+                <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200/70">
+                  <span className="inline-flex items-center gap-2">
+                    <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400" aria-hidden />
+                    Step {index + 1}
+                  </span>
+                  <span className="text-white/60 transition-colors group-hover:text-emerald-300/80">Workflow</span>
+                </div>
+                <h3 className="mt-4 text-lg font-semibold text-white transition-colors group-hover:text-emerald-200 sm:text-xl">{workflow.title}</h3>
+                <p className="mt-3 text-sm leading-relaxed text-slate-100/80 transition-colors group-hover:text-slate-100">
+                  {workflow.description}
                 </p>
               </div>
-              <div className="grid gap-4">
-                {workflows.map((workflow, index) => (
-                  <div
-                    key={workflow.title}
-                    className="group rounded-[26px] border border-white/10 bg-gradient-to-br from-slate-950 via-slate-950/90 to-teal-950/80 p-5 text-sm text-slate-100 shadow-[0_28px_80px_rgba(15,23,42,0.45)] transition hover:border-emerald-400/50 hover:shadow-[0_35px_95px_rgba(16,185,129,0.35)]"
-                  >
-                    <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200/70">
-                      <span className="inline-flex items-center gap-2">
-                        <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400" aria-hidden />
-                        Step {index + 1}
-                      </span>
-                      <span className="text-white/60">Workflow</span>
-                    </div>
-                    <h3 className="mt-3 text-lg font-semibold text-white">{workflow.title}</h3>
-                    <p className="mt-2 text-sm leading-relaxed text-slate-100/80">
-                      {workflow.description}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div id="insights" className="space-y-6">
-              <div className="flex h-full flex-col gap-6 rounded-[32px] border border-white/10 bg-gradient-to-br from-teal-900/40 via-slate-950/80 to-slate-950/95 p-6 text-slate-100 shadow-[0_30px_90px_rgba(15,23,42,0.55)] backdrop-blur-2xl">
+            ))}
+          </div>
+        </section>
+
+        <section id="insights" className="mx-auto w-full max-w-6xl px-6 py-16 lg:px-10 lg:py-20">
+          <div className="flex h-full flex-col gap-6 rounded-[32px] border border-white/10 bg-gradient-to-br from-teal-900/40 via-slate-950/80 to-slate-950/95 p-6 text-slate-100 shadow-[0_30px_90px_rgba(15,23,42,0.55)] backdrop-blur-2xl">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-200/80">
                     Insight Studio
@@ -356,8 +355,6 @@ export default function LandingPage() {
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
           </div>
         </section>
 
@@ -404,8 +401,8 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="mx-auto w-full max-w-6xl px-6 pb-16 lg:px-10 lg:pb-20">
-          <div className="rounded-[32px] border border-white/10 bg-slate-950/70 p-8 text-slate-100 shadow-[0_35px_95px_rgba(15,23,42,0.55)] backdrop-blur-xl">
+        <section className="mx-auto w-full max-w-[95%] 2xl:max-w-[90%] px-4 sm:px-6 pb-16 lg:px-8 xl:px-12 lg:pb-20">
+          <div className="rounded-[32px] border border-white/10 bg-slate-950/70 p-6 sm:p-8 lg:p-10 xl:p-12 text-slate-100 shadow-[0_35px_95px_rgba(15,23,42,0.55)] backdrop-blur-xl">
             <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-200/80">
               Retrieval orchestration
             </p>
@@ -484,64 +481,23 @@ export default function LandingPage() {
               .delay-5 { animation-delay: 2s; }
               .delay-6 { animation-delay: 2.4s; }
               
-              /* Hover expand/collapse styles */
+              /* Always show descriptions for better readability */
               .retrieval-container .stage-card {
-                transition: all 0.3s ease;
-                min-height: 140px;
+                min-height: auto;
               }
               .retrieval-container .stage-card .stage-description {
-                max-height: 0;
-                opacity: 0;
-                overflow: hidden;
-                transition: max-height 0.3s ease, opacity 0.3s ease, margin 0.3s ease;
-                margin-top: 0;
-              }
-              .retrieval-container .stage-card .stage-progress {
-                max-height: 0;
-                opacity: 0;
-                overflow: hidden;
-                transition: max-height 0.3s ease, opacity 0.3s ease, margin 0.3s ease;
-                margin-top: 0;
-              }
-              /* When hovering container, shrink non-hovered cards */
-              .retrieval-container:has(.stage-card:hover) .stage-card:not(:hover) {
-                min-height: 120px;
-                transform: scale(0.95);
-              }
-              /* Expand hovered card */
-              .retrieval-container .stage-card:hover {
-                min-height: auto;
-                transform: scale(1.05);
-                z-index: 10;
-              }
-              .retrieval-container .stage-card:hover .stage-description {
                 max-height: 500px;
                 opacity: 1;
                 margin-top: 0.5rem;
               }
-              .retrieval-container .stage-card:hover .stage-progress {
+              .retrieval-container .stage-card .stage-progress {
                 max-height: 8px;
                 opacity: 1;
                 margin-top: 1rem;
               }
-              /* When no card is hovered, all can be slightly larger */
-              .retrieval-container:not(:has(.stage-card:hover)) .stage-card {
-                min-height: 140px;
-              }
-              /* Diminish arrows when hovering on any card */
-              .retrieval-container:has(.stage-card:hover) .stage-card-arrow {
-                opacity: 0.25;
-                transform: scale(0.65);
-                transition: opacity 0.3s ease, transform 0.3s ease;
-              }
-              /* Completely hide arrows when a card is hovered to avoid content obstruction */
-              .retrieval-container .stage-card:hover .stage-card-arrow {
-                opacity: 0.15;
-                transform: scale(0.5);
-              }
             `}} />
-            <div className="mt-8">
-              <div className="retrieval-container mx-auto grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+            <div className="mt-10 sm:mt-12 lg:mt-16">
+              <div className="retrieval-container mx-auto flex flex-nowrap justify-between items-stretch gap-6 sm:gap-8 lg:gap-10 xl:gap-12 2xl:gap-16 overflow-x-auto scrollbar-hide scroll-smooth pb-4" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}>
                 {[
                   { 
                     label: "User text", 
@@ -591,9 +547,9 @@ export default function LandingPage() {
                     animation: "icon-float delay-6"
                   },
                 ].map((stage, index, arr) => (
-                  <div key={stage.label} className="relative">
+                  <div key={stage.label} className="relative flex-shrink-0 flex-1 min-w-[180px] sm:min-w-[200px] lg:min-w-[220px] xl:min-w-[240px] 2xl:min-w-[260px]">
                     <div className={clsx(
-                      "stage-card relative flex h-full flex-col rounded-[20px] border border-white/10 bg-gradient-to-br from-emerald-500/10 via-green-500/8 to-teal-500/10 p-4 shadow-[0_20px_50px_rgba(15,23,42,0.5)] backdrop-blur-sm transition-all hover:border-emerald-400/50 hover:shadow-[0_30px_80px_rgba(16,185,129,0.35)] card-pulse lg:p-5",
+                      "stage-card relative flex h-full w-full flex-col rounded-[20px] border border-white/10 bg-gradient-to-br from-emerald-500/10 via-green-500/8 to-teal-500/10 p-5 sm:p-6 shadow-[0_20px_50px_rgba(15,23,42,0.5)] backdrop-blur-sm card-pulse lg:p-7",
                       index === 0 && "delay-0",
                       index === 1 && "delay-1",
                       index === 2 && "delay-2",
@@ -602,9 +558,9 @@ export default function LandingPage() {
                       index === 5 && "delay-5",
                       index === 6 && "delay-6"
                     )}>
-                      <div className="absolute inset-0 -z-10 rounded-[24px] bg-gradient-to-br from-emerald-500/5 via-green-500/3 to-teal-500/5 opacity-0 blur-xl transition-opacity hover:opacity-100" />
+                      <div className="absolute inset-0 -z-10 rounded-[24px] bg-gradient-to-br from-emerald-500/5 via-green-500/3 to-teal-500/5 opacity-60 blur-xl" />
                       <div className="mb-3 flex items-center justify-between">
-                        <span className={`flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500/20 via-green-500/15 to-teal-500/20 text-xl shadow-inner shadow-emerald-500/10 transition-transform hover:scale-110 ${stage.animation} icon-glow lg:h-12 lg:w-12 lg:text-2xl`}>
+                        <span className={`flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500/20 via-green-500/15 to-teal-500/20 text-xl shadow-inner shadow-emerald-500/10 ${stage.animation} icon-glow lg:h-12 lg:w-12 lg:text-2xl`}>
                           {stage.isImage ? (
                             <Image 
                               src={stage.icon} 
@@ -621,7 +577,7 @@ export default function LandingPage() {
                           {index + 1}
                         </span>
                       </div>
-                      <h3 className="mb-2 text-base font-semibold text-white transition-colors hover:text-emerald-300 lg:text-lg">{stage.label}</h3>
+                      <h3 className="mb-2 text-base font-semibold text-white lg:text-lg">{stage.label}</h3>
                       <p className="stage-description text-xs leading-relaxed text-slate-200/80 lg:text-sm">{stage.description}</p>
                       <div className="stage-progress h-1 w-full overflow-hidden rounded-full bg-emerald-500/10">
                         <div className={`h-full rounded-full bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 animate-pulse`} style={{ 
@@ -631,10 +587,10 @@ export default function LandingPage() {
                       </div>
                     </div>
                     {index < arr.length - 1 && (
-                      <div className="stage-card-arrow absolute -right-2 top-1/2 z-10 hidden -translate-y-1/2 transition-all xl:flex xl:-right-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500/30 via-green-500/20 to-teal-500/30 shadow-[0_8px_24px_rgba(16,185,129,0.3)] backdrop-blur-sm xl:h-10 xl:w-10">
+                      <div className="stage-card-arrow absolute -right-3 top-1/2 z-10 hidden -translate-y-1/2 transition-all lg:flex lg:-right-4 xl:-right-5 2xl:-right-6">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500/30 via-green-500/20 to-teal-500/30 shadow-[0_8px_24px_rgba(16,185,129,0.3)] backdrop-blur-sm xl:h-12 xl:w-12 2xl:h-14 2xl:w-14">
                           <svg
-                            className="h-4 w-4 text-emerald-300 arrow-animate xl:h-5 xl:w-5"
+                            className="h-5 w-5 text-emerald-300 arrow-animate xl:h-6 xl:w-6 2xl:h-7 2xl:w-7"
                             fill="none"
                             viewBox="0 0 24 24"
                             stroke="currentColor"
@@ -674,10 +630,10 @@ export default function LandingPage() {
                 round-the-clock guidance that feels human.
               </p>
               <div className="flex flex-wrap items-center justify-center gap-4 sm:justify-start">
-                <StartPilotButton className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 px-6 py-3 text-sm font-semibold text-white shadow-[0_22px_45px_rgba(16,185,129,0.35)] transition hover:scale-[1.05]" />
+                <StartPilotButton className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 px-6 py-3 text-sm font-semibold text-white shadow-[0_22px_45px_rgba(16,185,129,0.35)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" />
                 <Link
                   href="/team"
-                  className="inline-flex items-center gap-2 rounded-full border border-white/15 px-6 py-3 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:text-white"
+                  className="inline-flex items-center gap-2 rounded-full border border-white/15 px-6 py-3 text-sm font-semibold text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                 >
                   Talk to our team
                 </Link>
@@ -691,13 +647,13 @@ export default function LandingPage() {
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-4 px-6 sm:flex-row lg:px-10">
           <p>© {new Date().getFullYear()} Health Companion. Crafted with care and safety in mind.</p>
           <div className="flex items-center gap-4">
-            <Link href="/team" className="hover:text-white">
+            <Link href="/team" className="text-slate-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400">
               Meet our team
             </Link>
-            <Link href="/privacy" className="hover:text-white">
+            <Link href="/privacy" className="text-slate-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400">
               Privacy
             </Link>
-            <Link href="/terms" className="hover:text-white">
+            <Link href="/terms" className="text-slate-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400">
               Terms
             </Link>
           </div>
