@@ -137,6 +137,13 @@ function ChatMessage({ message, index, language = 'en', onFeedback }: ChatMessag
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
+  // Sync feedback state with message prop when it changes (e.g., after reload)
+  useEffect(() => {
+    if (message.userFeedback !== feedbackGiven) {
+      setFeedbackGiven(message.userFeedback || null);
+    }
+  }, [message.userFeedback]);
+
   const markdownComponents: Components = useMemo(() => ({
     a: ({ children, className, ...props }) => (
       <a

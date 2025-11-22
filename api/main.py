@@ -2724,8 +2724,13 @@ async def process_chat_request_stream(
             conversation_history=conversation_history,
         ):
             answer_en_chunks.append(chunk)
-            # Only stream English chunks if no translation is needed
+            # Stream English chunks immediately for progress feedback (even if translation is needed)
+            # This gives users immediate feedback while translation happens in background
             if not needs_translation:
+                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+            else:
+                # For non-English: stream English chunks as "loading" indicator
+                # This shows progress while translation is being prepared
                 yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
         pipeline_timings["ai_generation"] = time.perf_counter() - generation_start
         logger.info(f"✅ AI generation completed: {pipeline_timings['ai_generation']:.2f}s ({len(''.join(answer_en_chunks))} chars)")
@@ -2742,8 +2747,8 @@ async def process_chat_request_stream(
         # Stream the fallback answer character by character for consistency
         for char in fallback_answer:
             answer_en_chunks.append(char)
-            if not needs_translation:
-                yield f"data: {json.dumps({'type': 'chunk', 'content': char})}\n\n"
+            # Always stream for progress feedback
+            yield f"data: {json.dumps({'type': 'chunk', 'content': char})}\n\n"
     
     # Combine all chunks
     answer_en = "".join(answer_en_chunks)
@@ -2763,10 +2768,30 @@ async def process_chat_request_stream(
         )
         pipeline_timings["translation_back"] = time.perf_counter() - translate_back_start
         logger.info(f"✅ Translation back completed: {pipeline_timings.get('translation_back', 0)*1000:.2f}ms")
-        # Stream the translated answer word by word to maintain streaming effect
-        words = re.findall(r'\S+|\s+', answer)  # Split into words and spaces
-        for word in words:
-            yield f"data: {json.dumps({'type': 'chunk', 'content': word})}\n\n"
+        
+        # Stream the translated answer in larger chunks for better performance
+        # Split by sentences and punctuation for natural flow, but larger than word-by-word
+        # Split on sentence endings but keep the punctuation with the sentence
+        sentence_pattern = r'([.!?।]+\s*|[\n]+)'
+        parts = re.split(sentence_pattern, answer)
+        
+        # Clear the English chunks that were shown as loading indicator
+        # Send a signal to clear and replace with translated content
+        yield f"data: {json.dumps({'type': 'translated_start'})}\n\n"
+        
+        # Stream sentence by sentence for natural flow and better performance
+        chunk_buffer = ''
+        for part in parts:
+            if part:
+                chunk_buffer += part
+                # Send chunks every ~50 characters or at sentence boundaries
+                if len(chunk_buffer) >= 50 or part.strip().endswith(('.', '!', '?', '।', '\n')):
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk_buffer})}\n\n"
+                    chunk_buffer = ''
+        
+        # Send any remaining buffer
+        if chunk_buffer:
+            yield f"data: {json.dumps({'type': 'chunk', 'content': chunk_buffer})}\n\n"
     else:
         answer = answer_en
     
@@ -2789,10 +2814,24 @@ async def process_chat_request_stream(
             disclaimer = disclaimer_en
         
         # Stream disclaimer (always stream, whether translated or not)
+        # Use larger chunks for better performance
         disclaimer_text = "\n\n" + disclaimer
-        words = re.findall(r'\S+|\s+', disclaimer_text)
-        for word in words:
-            yield f"data: {json.dumps({'type': 'chunk', 'content': word})}\n\n"
+        # Split into sentences for natural streaming
+        sentence_pattern = r'([.!?।]+\s*|[\n]+)'
+        parts = re.split(sentence_pattern, disclaimer_text)
+        
+        chunk_buffer = ''
+        for part in parts:
+            if part:
+                chunk_buffer += part
+                # Send chunks every ~50 characters or at sentence boundaries
+                if len(chunk_buffer) >= 50 or part.strip().endswith(('.', '!', '?', '।', '\n')):
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk_buffer})}\n\n"
+                    chunk_buffer = ''
+        
+        # Send any remaining buffer
+        if chunk_buffer:
+            yield f"data: {json.dumps({'type': 'chunk', 'content': chunk_buffer})}\n\n"
         
         answer += "\n\n" + disclaimer
     
@@ -3028,11 +3067,12 @@ async def chat_stream(
         
         return StreamingResponse(
             generate(),
-            media_type="text/event-stream",
+            media_type="text/event-stream; charset=utf-8",  # Explicit UTF-8 encoding
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
                 "X-Accel-Buffering": "no",  # Disable buffering in nginx
+                "Content-Type": "text/event-stream; charset=utf-8",  # Ensure UTF-8
             }
         )
     except HTTPException:
@@ -3575,6 +3615,7 @@ async def get_session_messages(
             "facts": message.get("facts"),
             "citations": filtered_citations,  # Always include citations, even if empty
             "metadata": message.get("metadata"),
+            "userFeedback": message.get("user_feedback"),  # Include feedback from message_feedback table
         })
     
     # Cache the result for 5 minutes (300 seconds)
@@ -3724,6 +3765,19 @@ async def submit_feedback(
         )
         
         logger.info(f"Feedback submitted: message_id={message_id[:8]}, customer_id={user_id[:8] if user_id else 'N/A'}, feedback={feedback}")
+        
+        # Invalidate cache for the session messages to ensure feedback shows up on reload
+        session_id = message.get("session_id")
+        if session_id:
+            # Invalidate cache for common limit values used by the frontend
+            # This ensures feedback appears correctly after page reload
+            for limit in [20, 50, 100]:
+                cache_key = f"session_messages:{session_id}:{limit}"
+                try:
+                    await cache_service.delete(cache_key)
+                    logger.debug(f"Invalidated cache key: {cache_key}")
+                except Exception as e:
+                    logger.warning(f"Failed to invalidate cache key {cache_key}: {e}")
         
         return JSONResponse(content={"success": True, "message": "Feedback submitted"})
         

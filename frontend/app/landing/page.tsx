@@ -6,6 +6,7 @@ import AnimatedNumber from "../../components/AnimatedNumber";
 import HeroSection from "../../components/HeroSection";
 import StartPilotButton from "../../components/StartPilotButton";
 import FeatureCard from "../../components/FeatureCard";
+import NavLink from "../../components/NavLink";
 
 export const metadata: Metadata = {
   title: "Health Companion | Intelligent Care Guidance",
@@ -140,19 +141,19 @@ const features = [
 
 const workflows = [
   {
-    title: "Symptom Companion",
+    title: "Multilingual Conversations",
     description:
-      "Guide users through nuanced symptom check-ins with clarifying questions, reassurance, and evidence-based watch-outs.",
+      "Automatically detect and translate queries across 6+ languages. Users receive responses in their native tongue while maintaining clinical accuracy and context.",
   },
   {
-    title: "Care Navigation",
+    title: "Real-time Safety Monitoring",
     description:
-      "Highlight nearby clinics, remote visit options, and specialized resources that match urgency and preference.",
+      "Continuously analyze conversations for red-flag symptoms, mental health crises, and pregnancy emergencies. Instant alerts guide users to appropriate care.",
   },
   {
-    title: "Medication Moments",
+    title: "Personalized Medical Guidance",
     description:
-      "Surface contraindications, dosing reminders, and supportive self-care tips framed in everyday language.",
+      "Leverage user profiles, medical history, and location to deliver contextually relevant advice. Vector retrieval from 1,120+ medical sources ensures evidence-based responses.",
   },
 ];
 
@@ -200,52 +201,84 @@ const dataHighlights = [
 export default function LandingPage() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(16,185,129,0.25),transparent_55%),radial-gradient(circle_at_85%_15%,rgba(34,197,94,0.24),transparent_55%),radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.20),transparent_60%),radial-gradient(circle_at_20%_90%,rgba(34,197,94,0.18),transparent_55%),linear-gradient(180deg,rgba(2,6,23,0.92),rgba(2,6,23,0.92))]" />
-      <div className={gradientSpot("top-[-8rem] left-[-6rem]", "bg-emerald-500/40", "h-72 w-72")} />
-      <div className={gradientSpot("top-[-4rem] right-[-4rem]", "bg-green-500/35", "h-64 w-64")} />
-      <div className={gradientSpot("bottom-[-6rem] right-[-10rem]", "bg-teal-500/40", "h-80 w-80")} />
-      <div className={gradientSpot("bottom-[-8rem] left-[-8rem]", "bg-emerald-500/35", "h-72 w-72")} />
+      {/* Consistent background matching hero section - no darkening gradients */}
+      <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_15%_20%,rgba(16,185,129,0.25),transparent_55%),radial-gradient(circle_at_85%_15%,rgba(34,197,94,0.24),transparent_55%),radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.20),transparent_60%),radial-gradient(circle_at_20%_90%,rgba(34,197,94,0.18),transparent_55%)]" />
+      <div className={gradientSpot("top-[-8rem] left-[-6rem]", "bg-emerald-500/30", "h-72 w-72")} />
+      <div className={gradientSpot("top-[-4rem] right-[-4rem]", "bg-green-500/25", "h-64 w-64")} />
+      <div className={gradientSpot("bottom-[-6rem] right-[-10rem]", "bg-teal-500/30", "h-80 w-80")} />
+      <div className={gradientSpot("bottom-[-8rem] left-[-8rem]", "bg-emerald-500/25", "h-72 w-72")} />
 
-      <header className="relative z-10 border-b border-white/5 bg-slate-950/60 backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 sm:px-6 sm:py-5 md:py-6 lg:px-10">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 text-sm font-semibold text-white shadow-[0_15px_35px_rgba(16,185,129,0.35)] sm:h-10 sm:w-10 sm:text-lg">
-              HC
-            </span>
-            <div>
-              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-300/80 sm:text-xs">
-                Health Companion
-              </p>
-              <p className="text-xs font-semibold text-white sm:text-sm">Care Intelligence Platform</p>
+      <header className="sticky top-0 z-50 border-b border-white/5 bg-slate-950/60 backdrop-blur-xl">
+        <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-5 md:py-6 lg:px-10">
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+            {/* Left: Logo + Branding - Always at extreme left */}
+            <div className="flex items-center justify-start gap-2 sm:gap-3">
+              <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 text-sm font-semibold text-white shadow-[0_15px_35px_rgba(16,185,129,0.35)] sm:h-10 sm:w-10 sm:text-lg">
+                <svg
+                  className="h-5 w-5 sm:h-6 sm:w-6"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                  />
+                </svg>
+              </span>
+              <div className="flex-shrink-0">
+                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-300/80 sm:text-xs whitespace-nowrap">
+                  Health Companion
+                </p>
+                <p className="text-xs font-semibold text-white sm:text-sm whitespace-nowrap">Care Intelligence Platform</p>
+              </div>
             </div>
-          </div>
-          <nav className="hidden items-center gap-6 text-xs text-slate-200 md:flex md:gap-8 md:text-sm">
-            <a className="text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" href="#features">
-              Features
-            </a>
-            <a className="text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" href="#workflows">
-              Workflows
-            </a>
-            <a className="text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" href="#insights">
-              Insights
-            </a>
-            <a className="text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" href="#cta">
-              Get Started
-            </a>
-          </nav>
-          <div className="flex items-center gap-2 sm:gap-3">
-            <Link
-              href="/landing#insights"
-              className="hidden rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 sm:inline-flex sm:px-4 sm:py-2 sm:text-sm"
-            >
-              View Insights
-            </Link>
-            <Link
-              href="/auth"
-              className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 px-3 py-1.5 text-xs font-semibold text-white shadow-[0_18px_40px_rgba(16,185,129,0.35)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 sm:gap-2 sm:px-4 sm:py-2 sm:text-sm"
-            >
-              Get Started
-            </Link>
+            
+            {/* Center: Navigation Links - Always centered */}
+            <nav className="hidden items-center justify-center gap-4 text-xs text-slate-200 md:flex md:gap-6 md:text-sm lg:gap-8">
+              <NavLink
+                href="#features"
+                className="text-slate-200 transition-colors hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 whitespace-nowrap"
+              >
+                Features
+              </NavLink>
+              <NavLink
+                href="#workflows"
+                className="text-slate-200 transition-colors hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 whitespace-nowrap"
+              >
+                Workflows
+              </NavLink>
+              <NavLink
+                href="#insights"
+                className="text-slate-200 transition-colors hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 whitespace-nowrap"
+              >
+                Insights
+              </NavLink>
+              <NavLink
+                href="#cta"
+                className="text-slate-200 transition-colors hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 whitespace-nowrap"
+              >
+                Contact
+              </NavLink>
+            </nav>
+            
+            {/* Right: Action Buttons - Always at extreme right */}
+            <div className="flex items-center justify-end gap-2 sm:gap-3">
+              <NavLink
+                href="#insights"
+                className="hidden rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:border-emerald-400/50 hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 sm:inline-flex sm:px-4 sm:py-2 sm:text-sm whitespace-nowrap"
+              >
+                View Insights
+              </NavLink>
+              <Link
+                href="/auth"
+                className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 px-3 py-1.5 text-xs font-semibold text-white shadow-[0_18px_40px_rgba(16,185,129,0.35)] transition-all hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 sm:gap-2 sm:px-4 sm:py-2 sm:text-sm whitespace-nowrap"
+              >
+                Get Started
+              </Link>
+            </div>
           </div>
         </div>
       </header>
@@ -253,7 +286,7 @@ export default function LandingPage() {
       <main className="relative z-10">
         <HeroSection />
 
-        <section id="features" className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 sm:py-16 md:py-20 lg:px-10 lg:py-24">
+        <section id="features" className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 sm:py-16 md:py-20 lg:px-10 lg:py-24" style={{ scrollMarginTop: '80px' }}>
           <div className="mb-8 flex flex-col gap-3 text-center sm:mb-10 sm:gap-4 sm:text-left">
             <p className="text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-200/80 sm:text-xs">Why teams choose us</p>
             <h2 className="text-2xl font-semibold text-white sm:text-3xl md:text-4xl">Features crafted for clinical-grade conversations.</h2>
@@ -268,13 +301,12 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section id="workflows" className="mx-auto w-full max-w-7xl px-6 py-16 lg:px-10 lg:py-20">
+        <section id="workflows" className="mx-auto w-full max-w-7xl px-6 py-16 lg:px-10 lg:py-20" style={{ scrollMarginTop: '80px' }}>
           <div className="mb-8 flex flex-col gap-3 text-center sm:mb-10 sm:gap-4">
             <p className="text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-200/80 sm:text-xs">Step-by-step clarity</p>
             <h2 className="text-2xl font-semibold text-white sm:text-3xl md:text-4xl">Workflows designed for real people.</h2>
             <p className="mx-auto max-w-3xl text-xs leading-relaxed text-slate-200/80 sm:text-sm">
-              Blend empathetic copy, actionable steps, and data-rich context. Customize journeys for health
-              programs, virtual clinics, or benefit providers — without breaking the narrative.
+              Our AI-powered healthcare assistant combines multilingual support, real-time safety monitoring, and personalized guidance to deliver compassionate, clinically sound care recommendations.
             </p>
           </div>
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -300,58 +332,57 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section id="insights" className="mx-auto w-full max-w-6xl px-6 py-16 lg:px-10 lg:py-20">
+        <section id="insights" className="mx-auto w-full max-w-6xl px-6 pt-8 pb-16 lg:px-10 lg:pt-12 lg:pb-20" style={{ scrollMarginTop: '80px' }}>
           <div className="flex h-full flex-col gap-6 rounded-[32px] border border-white/10 bg-gradient-to-br from-teal-900/40 via-slate-950/80 to-slate-950/95 p-6 text-slate-100 shadow-[0_30px_90px_rgba(15,23,42,0.55)] backdrop-blur-2xl">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-200/80">
-                    Insight Studio
+                    Care Intelligence
                   </p>
-                  <span className="text-xs text-slate-300">Live sync</span>
+                  <span className="text-xs text-slate-300">Real-time</span>
                 </div>
-                <h3 className="mt-4 text-xl font-semibold text-white">Every conversation, richly explained.</h3>
+                <h3 className="mt-3 text-xl font-semibold text-white">Personalized guidance, powered by context.</h3>
                 <div className="space-y-5 text-sm leading-relaxed text-slate-200/80">
                   <p>
-                    Powered by a transparent pipeline, every interaction becomes part of a continuous care story. We
-                    capture the full exchange, highlight safety actions, and surface why certain guidance was
-                    delivered.
+                    Every conversation is tailored to your health profile, medical history, and language preference. Our system
+                    continuously learns from your interactions to provide more relevant, empathetic, and clinically sound guidance.
                   </p>
                   <div className="rounded-[24px] border border-white/10 bg-slate-950/60 p-5 shadow-[0_25px_70px_rgba(15,23,42,0.45)]">
                     <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200/70">
-                      Transcript timeline
+                      Smart features
                     </p>
                     <ul className="mt-3 space-y-3 text-sm text-slate-100/75">
                       <li className="flex items-start gap-2">
                         <span className="mt-1 inline-flex h-1.5 w-1.5 rounded-full bg-emerald-300" aria-hidden />
                         <span>
-                          Auto-summaries and tags categorize each message by symptom, risk level, and follow-up.
+                          Multilingual support detects your language and delivers responses in your preferred tongue, ensuring clear communication.
                         </span>
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="mt-1 inline-flex h-1.5 w-1.5 rounded-full bg-green-300" aria-hidden />
                         <span>
-                          Escalation insights explain why hand-offs were triggered and what data informed the decision.
+                          Safety monitoring automatically flags red-flag symptoms, mental health concerns, and pregnancy-related emergencies.
                         </span>
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="mt-1 inline-flex h-1.5 w-1.5 rounded-full bg-teal-300" aria-hidden />
                         <span>
-                          Export utilities package transcripts, medical facts, and resources for clinical collaborators.
+                          Personalized recommendations adapt to your age, medical conditions, and location for contextually relevant guidance.
                         </span>
                       </li>
                     </ul>
                   </div>
                   <div className="grid gap-3 text-xs uppercase tracking-[0.28em] text-slate-200/70">
                     <div className="flex justify-between rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3">
-                      <span>Response Clarity</span>
-                      <span>92%</span>
+                      <span>Language Support</span>
+                      <span>6+ Languages</span>
                     </div>
                     <div className="flex justify-between rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3">
-                      <span>Safety Guardrails</span>
-                      <span>98%</span>
+                      <span>Safety Detection</span>
+                      <span>Real-time</span>
                     </div>
                     <div className="flex justify-between rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3">
-                      <span>Human Hand-offs</span>
-                      <span>1-click</span>
+                      <span>Medical Knowledge</span>
+                      <span>1,120+ Sources</span>
                     </div>
                   </div>
                 </div>
@@ -401,7 +432,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="mx-auto w-full max-w-[95%] 2xl:max-w-[90%] px-4 sm:px-6 pb-16 lg:px-8 xl:px-12 lg:pb-20">
+        <section className="mx-auto w-full max-w-6xl px-4 sm:px-6 pb-16 lg:px-10 lg:pb-20">
           <div className="rounded-[32px] border border-white/10 bg-slate-950/70 p-6 sm:p-8 lg:p-10 xl:p-12 text-slate-100 shadow-[0_35px_95px_rgba(15,23,42,0.55)] backdrop-blur-xl">
             <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-200/80">
               Retrieval orchestration
@@ -497,7 +528,7 @@ export default function LandingPage() {
               }
             `}} />
             <div className="mt-10 sm:mt-12 lg:mt-16">
-              <div className="retrieval-container mx-auto flex flex-nowrap justify-between items-stretch gap-6 sm:gap-8 lg:gap-10 xl:gap-12 2xl:gap-16 overflow-x-auto scrollbar-hide scroll-smooth pb-4" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}>
+              <div className="retrieval-container mx-auto flex flex-nowrap justify-between items-stretch gap-6 sm:gap-8 lg:gap-10 xl:gap-12 2xl:gap-16 overflow-x-auto scrollbar-hide scroll-smooth pb-4 lg:max-w-[850px] xl:max-w-[930px] 2xl:max-w-[1010px]" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}>
                 {[
                   { 
                     label: "User text", 
@@ -611,6 +642,7 @@ export default function LandingPage() {
         <section
           id="cta"
           className="mx-auto mb-24 w-full max-w-6xl px-6 lg:px-10"
+          style={{ scrollMarginTop: '80px' }}
         >
           <div className="relative overflow-hidden rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-900/80 via-slate-950 to-slate-900/90 px-6 py-12 shadow-[0_40px_110px_rgba(15,23,42,0.65)] backdrop-blur-xl sm:px-10">
             <div

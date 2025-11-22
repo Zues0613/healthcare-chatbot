@@ -162,25 +162,34 @@ async def logout(
     
     Revokes refresh token and clears cookies
     """
+    user_id = user.get("user_id", "unknown")
+    logger.info(f"Logout request received for user: {user_id}")
+    
     try:
         # Get refresh token from cookie
         refresh_token = request.cookies.get("refresh_token")
         
         if refresh_token:
             # Revoke refresh token
+            logger.info(f"Revoking refresh token for user: {user_id}")
             await auth_service.revoke_refresh_token(refresh_token)
+            logger.info(f"Refresh token revoked successfully for user: {user_id}")
+        else:
+            logger.info(f"No refresh token found in cookies for user: {user_id}")
         
         # Clear cookies with same settings as when they were set
         response.delete_cookie(key="access_token", httponly=True, secure=SECURE_COOKIE, samesite=SAMESITE_POLICY)
         response.delete_cookie(key="refresh_token", httponly=True, secure=SECURE_COOKIE, samesite=SAMESITE_POLICY)
         
+        logger.info(f"Logout successful for user: {user_id}")
         return {"message": "Logged out successfully"}
     
     except Exception as e:
-        logger.error(f"Error in logout: {e}", exc_info=True)
+        logger.error(f"Error in logout for user {user_id}: {e}", exc_info=True)
         # Clear cookies even if there's an error
         response.delete_cookie(key="access_token", httponly=True, secure=IS_PRODUCTION, samesite="lax")
         response.delete_cookie(key="refresh_token", httponly=True, secure=IS_PRODUCTION, samesite="lax")
+        logger.info(f"Logout completed (with error) for user: {user_id}")
         return {"message": "Logged out"}
 
 

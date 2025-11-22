@@ -515,20 +515,41 @@ class DatabaseService:
             logger.info(f"Retrieving messages for session_id: {session_id}, limit: {limit}, customer_id: {customer_id}")
             
             if customer_id:
-                # Include feedback only for the specified customer
-                messages = await db_client.fetch(
-                    """
-                    SELECT 
-                        m.*,
-                        f.feedback as user_feedback
-                    FROM chat_messages m
-                    LEFT JOIN message_feedback f ON m.id = f.message_id AND f.customer_id = $3
-                    WHERE m.session_id = $1
-                    ORDER BY m.created_at ASC
-                    LIMIT $2
-                    """,
-                    session_id, limit, customer_id
-                )
+                # Try to include feedback only for the specified customer
+                # Fall back to query without feedback if message_feedback table doesn't exist
+                try:
+                    messages = await db_client.fetch(
+                        """
+                        SELECT 
+                            m.*,
+                            f.feedback as user_feedback
+                        FROM chat_messages m
+                        LEFT JOIN message_feedback f ON m.id = f.message_id AND f.customer_id = $3
+                        WHERE m.session_id = $1
+                        ORDER BY m.created_at ASC
+                        LIMIT $2
+                        """,
+                        session_id, limit, customer_id
+                    )
+                except Exception as e:
+                    # If message_feedback table doesn't exist, fall back to query without feedback
+                    if "message_feedback" in str(e) or "does not exist" in str(e):
+                        logger.warning(f"message_feedback table not found, retrieving messages without feedback: {e}")
+                        messages = await db_client.fetch(
+                            """
+                            SELECT 
+                                m.*,
+                                NULL as user_feedback
+                            FROM chat_messages m
+                            WHERE m.session_id = $1
+                            ORDER BY m.created_at ASC
+                            LIMIT $2
+                            """,
+                            session_id, limit
+                        )
+                    else:
+                        # Re-raise if it's a different error
+                        raise
             else:
                 # Get messages without filtering feedback (for admin or when customer_id not needed)
                 messages = await db_client.fetch(

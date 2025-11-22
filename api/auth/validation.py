@@ -260,6 +260,11 @@ def validate_chat_input(text: str) -> str:
         # Pattern 3: /* or */ comment markers  
         r"/\*",
         r"\*/",
+        # Pattern 4: Hash comment (# - used in MySQL)
+        r"['\"]\s*#",
+        # Pattern 5: Combination comments
+        r"['\"]\s*--\s+",
+        r"['\"]\s*/\*.*?\*/",
         
         # SQL injection with OR/AND - classic patterns like ' OR '1'='1
         # Pattern 1: Quote (single or double), space, OR/AND, space, then '1'='1 (most common)
@@ -277,13 +282,18 @@ def validate_chat_input(text: str) -> str:
         # Pattern 5: Quote at start, OR/AND (less strict on spaces for edge cases)
         # Match: 'OR'1'='1 (no spaces), 'OR 1=1
         r"['\"]\s*(OR|AND)\s*['\"]?[0-9xXa-zA-Z]+['\"]?\s*=\s*['\"]?[0-9xXa-zA-Z]+['\"]?",
+        # Pattern 6: OR/AND without quotes but with equals (e.g., ' OR 1=1, ' AND 1=1)
+        r"['\"]\s+(OR|AND)\s+1\s*=\s*1",
+        # Pattern 7: OR/AND with LIKE operator
+        r"['\"]\s+(OR|AND)\s+.*?\s+LIKE\s+",
         
         # Semicolons followed by SQL keywords (command chaining - clear SQL injection)
-        r"['\"]?\s*;\s*(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|EXECUTE|UNION|TRUNCATE)",
+        r"['\"]?\s*;\s*(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|EXECUTE|UNION|TRUNCATE|WAITFOR|SLEEP|pg_sleep)",
         
         # UNION SELECT patterns (clear SQL injection)
         r"['\"]?\s*UNION\s+(ALL\s+)?SELECT",
         r"UNION\s+(ALL\s+)?SELECT\s+.*?\s+FROM",
+        r"UNION\s+(ALL\s+)?SELECT\s+.*?\s+.*?FROM",
         
         # SQL DDL statements - DROP/CREATE/ALTER/TRUNCATE with TABLE/DATABASE
         r"\b(DROP|CREATE|ALTER|TRUNCATE)\s+(TABLE|DATABASE|SCHEMA|INDEX)\s+\w+",
@@ -296,11 +306,29 @@ def validate_chat_input(text: str) -> str:
         # Pattern 2: UPDATE ... SET (clear SQL syntax)
         r"\bUPDATE\s+\w+\s+SET\s+",
         
-        # Exclude common English phrases with determiners (to reduce false positives)
-        # But still catch actual SQL with WHERE clauses or semicolons
+        # SQL functions commonly used in injection (time-based, boolean-based blind)
+        r"\b(WAITFOR\s+DELAY|SLEEP|pg_sleep|BENCHMARK)\s*\(",
+        r"\b(ASCII|SUBSTRING|CHAR|CONCAT|LENGTH|COUNT)\s*\(",
+        r"\b(IF|CASE)\s+.*?\s+THEN",
+        
+        # SQL injection with WHERE clauses
+        r"\bWHERE\s+.*?\s+(OR|AND)\s+['\"]?\d+['\"]?\s*=\s*['\"]?\d+['\"]?",
+        r"\bWHERE\s+.*?\s+(OR|AND)\s+['\"]1['\"]\s*=\s*['\"]1['\"]",
+        
+        # EXEC/EXECUTE patterns
+        r"\b(EXEC|EXECUTE)\s+.*?\(",
+        r"\b(EXEC|EXECUTE)\s+.*?\s",
         
         # Quoted strings immediately followed by SQL operators (suspicious)
         r"['\"][^'\"]*['\"]\s+(OR|AND|UNION)\s+",
+        
+        # ORDER BY / GROUP BY injection patterns
+        r"ORDER\s+BY\s+\d+",
+        r"GROUP\s+BY\s+\d+",
+        r"ORDER\s+BY\s+.*?\(",
+        
+        # HAVING clause injection
+        r"\bHAVING\s+.*?\s+(OR|AND)\s+",
     ]
     
     for pattern in chat_sql_patterns:

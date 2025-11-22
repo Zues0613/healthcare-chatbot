@@ -544,6 +544,7 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                       safety: msg.safetyData,
                       facts: msg.facts,
                       citations: citations,
+                      userFeedback: msg.userFeedback || msg.user_feedback, // Include feedback from cache
                     };
                   });
                   console.log('Cached entries citations:', chatEntries[0]?.citations);
@@ -887,9 +888,11 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
       }
 
       const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
+      // Explicitly use UTF-8 decoder for proper non-English character handling
+      const decoder = new TextDecoder('utf-8', { fatal: false, ignoreBOM: true });
       let buffer = '';
       let accumulatedContent = '';
+      let translatedStarted = false;
 
       if (!reader) {
         throw new Error('Response body is not readable');
@@ -925,9 +928,19 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                 }
               }
               
-              if (data.type === 'chunk') {
+              if (data.type === 'translated_start') {
+                // Clear the accumulated English content when translation starts
+                // This replaces the English loading indicator with translated content
+                translatedStarted = true;
+                accumulatedContent = '';
+              } else if (data.type === 'chunk') {
                 // Append chunk to accumulated content
-                accumulatedContent += data.content || '';
+                if (translatedStarted && accumulatedContent === '') {
+                  // Start fresh with translated content
+                  accumulatedContent = data.content || '';
+                } else {
+                  accumulatedContent += data.content || '';
+                }
                 
                 // Update the message in real-time (typewriter effect)
                 setMessages((prev) =>
@@ -938,7 +951,8 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                   )
                 );
               } else if (data.type === 'translated') {
-                // Replace with translated content
+                // Replace with translated content (legacy support)
+                translatedStarted = true;
                 accumulatedContent = data.content || accumulatedContent;
                 setMessages((prev) =>
                   prev.map((msg) =>
@@ -1451,10 +1465,18 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
           </div>
           <button
             type="button"
-            onClick={() => {
-              clearAuth();
-              // Clear all auth-related data and redirect to landing
-              router.push('/landing');
+            onClick={async () => {
+              try {
+                // Call backend logout endpoint to revoke refresh token and clear cookies
+                await apiClient.post('/auth/logout');
+              } catch (error) {
+                // Log error but continue with logout even if backend call fails
+                console.warn('Logout API call failed, continuing with local logout:', error);
+              } finally {
+                // Clear all auth-related data and redirect to landing
+                clearAuth();
+                router.push('/landing');
+              }
             }}
             className="mt-2 flex w-full items-center gap-3 rounded-lg border border-white/10 bg-slate-800/50 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-red-400/50 hover:bg-slate-800/70 hover:text-red-200"
           >
