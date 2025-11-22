@@ -48,3 +48,27 @@ api/test_context_management.py
 api/test_symptom_relationships.py
 api/test_conversation_history_cache.py
 
+# Test/debug/inspection scripts (may contain sensitive data or are temporary)
+# These are utility scripts for debugging and should not be committed
+api/scripts/test_*.py
+api/scripts/check_*.py
+api/scripts/verify_*.py
+api/scripts/inspect_*.py
+api/scripts/view_*.py
+api/scripts/analyze_*.py
+api/scripts/list_*.py
+api/scripts/show_*.py
+api/scripts/neo4j_demo.py
+api/scripts/generate_jwt_secret.py
+api/scripts/create_admin*.py
+api/scripts/migrate_medical_conditions.py
+api/scripts/check_medical_conditions.py
+
+# Database inspection/output files (may contain sensitive data like password hashes, tokens)
+api/scripts/*_inspection.json
+api/scripts/db_*.json
+api/scripts/*_report.json
+api/scripts/*_output.json
+
+# Note: Important migration scripts like migrate_normalize_customer_profile.py 
+# and create_tables.py are kept in git as they're part of the codebase

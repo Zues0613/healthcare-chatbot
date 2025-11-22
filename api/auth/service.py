@@ -58,17 +58,26 @@ class AuthService:
             # Hash password
             password_hash = hash_password_for_storage(password)
             
-            # Create user
+            # Create user with profile data
+            profile_data = {}
+            if age is not None:
+                profile_data["age"] = age
+            if sex is not None:
+                profile_data["sex"] = sex
+            if diabetes:
+                profile_data["diabetes"] = diabetes
+            if hypertension:
+                profile_data["hypertension"] = hypertension
+            if pregnancy:
+                profile_data["pregnancy"] = pregnancy
+            if city is not None:
+                profile_data["city"] = city
+            
             user = await db_service.create_customer(
                 email=email,
                 password_hash=password_hash,
                 role=role,
-                age=age,
-                sex=sex,
-                diabetes=diabetes,
-                hypertension=hypertension,
-                pregnancy=pregnancy,
-                city=city
+                profile_data=profile_data if profile_data else None
             )
             
             if not user:

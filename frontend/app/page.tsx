@@ -184,7 +184,7 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(initialSessionId || null);
   const [customerId, setCustomerId] = useState<string | null>(null);
-  const [narrationEnabled, setNarrationEnabled] = useState<boolean>(true);
+  const [narrationEnabled, setNarrationEnabled] = useState<boolean>(false);
   const [isLoadingSession, setIsLoadingSession] = useState(false);
   const [userDisplayName, setUserDisplayName] = useState<string>('User');
 
@@ -209,15 +209,15 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
     try {
       const saved = localStorage.getItem(narrationPrefKey);
       if (saved === null) {
-        // default to enabled
-        localStorage.setItem(narrationPrefKey, 'true');
-        setNarrationEnabled(true);
+        // default to disabled
+        localStorage.setItem(narrationPrefKey, 'false');
+        setNarrationEnabled(false);
       } else {
         setNarrationEnabled(saved === 'true');
       }
     } catch {
       // fallback
-      setNarrationEnabled(true);
+      setNarrationEnabled(false);
     }
   }, [narrationPrefKey]);
 
@@ -295,11 +295,11 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
     try {
       // Try cache first (only if not forcing refresh)
       if (!forceRefresh) {
-        const cachedSessions = loadChatSessionsFromCache(customerId);
-        if (cachedSessions && cachedSessions.length > 0) {
+      const cachedSessions = loadChatSessionsFromCache(customerId);
+      if (cachedSessions && cachedSessions.length > 0) {
           // Use cached data immediately (show instantly)
-          setChatSessions(cachedSessions);
-          setSessionsLoading(false);
+        setChatSessions(cachedSessions);
+        setSessionsLoading(false);
           // Fetch from API in background to update cache (non-blocking, silent update)
           // Only fetch recent 50 sessions for performance
           apiClient.get(`/customer/${customerId}/sessions?limit=50`)
@@ -631,6 +631,7 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                 safety: msg.safetyData,
                 facts: msg.facts,
                 citations: citations,
+                userFeedback: msg.userFeedback || msg.user_feedback, // Support both camelCase and snake_case
               };
             });
             
@@ -972,7 +973,7 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                       : msg
                   )
                 );
-                
+
                 console.log('✅ Updated message with citations:', citations.length);
 
                 // Update session ID if provided (URL already updated earlier if it was a new session)
@@ -1003,13 +1004,7 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                   loadChatSessions(customerId, true);
                 }
 
-                // Text-to-speech for final answer
-                if (typeof window !== 'undefined' && 'speechSynthesis' in window && narrationEnabled) {
-                  const utterance = new SpeechSynthesisUtterance(finalContent);
-                  utterance.lang = LANGUAGE_SPEECH_MAP[lang] ?? 'en-US';
-                  utterance.rate = 0.92;
-                  window.speechSynthesis.speak(utterance);
-                }
+                // Text-to-speech is now handled per-message via user interaction (removed auto-narration)
               }
             } catch (parseError) {
               console.warn('Error parsing SSE data:', parseError);
@@ -1642,7 +1637,28 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                   >
         {messages.length > 0 && messages.map((message, index) => (
                   <div key={message.id} className="space-y-4">
-                    <ChatMessage message={message} index={index} />
+                    <ChatMessage 
+                      message={message} 
+                      index={index} 
+                      language={lang}
+                      onFeedback={async (messageId, feedback) => {
+                        try {
+                          const response = await fetch(`${API_BASE}/message/${messageId}/feedback`, {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                            },
+                            credentials: 'include',
+                            body: JSON.stringify({ feedback }),
+                          });
+                          if (!response.ok) {
+                            console.warn('Failed to submit feedback');
+                          }
+                        } catch (error) {
+                          console.warn('Error submitting feedback:', error);
+                        }
+                      }}
+                    />
 
                     {message.safety?.red_flag && (
                       <div className="rounded-3xl border border-red-500/50 bg-red-500/10 p-5 text-red-200 shadow-[0_25px_70px_rgba(220,38,38,0.35)]">

@@ -49,39 +49,66 @@ class DatabaseService:
                 logger.warning(f"Customer not found: {customer_id}")
                 return None
             
-            # Update customer profile if provided
-            update_fields = []
-            update_values = []
+            # Update customer metadata if provided (keep in customers table)
+            customer_update_fields = []
+            customer_update_values = []
             param_num = 1
             
-            for field in ["age", "sex", "diabetes", "hypertension", "pregnancy", "city"]:
-                if field in profile_data:
-                    update_fields.append(f"{field} = ${param_num}")
-                    update_values.append(profile_data[field])
-                    param_num += 1
-            
-            if "medical_conditions" in profile_data:
-                update_fields.append(f"medical_conditions = ${param_num}::jsonb")
-                update_values.append(json.dumps(profile_data["medical_conditions"]))
-                param_num += 1
-            
             if "metadata" in profile_data:
-                update_fields.append(f"metadata = ${param_num}::jsonb")
-                update_values.append(json.dumps(profile_data["metadata"]))
+                customer_update_fields.append(f"metadata = ${param_num}::jsonb")
+                customer_update_values.append(json.dumps(profile_data["metadata"]))
                 param_num += 1
             
-            if update_fields:
-                update_values.append(customer_id)
+            if customer_update_fields:
+                customer_update_values.append(customer_id)
                 query = f"""
                     UPDATE customers 
-                    SET {', '.join(update_fields)}, updated_at = NOW()
+                    SET {', '.join(customer_update_fields)}, updated_at = NOW()
                     WHERE id = ${param_num}
-                    RETURNING *
                 """
-                customer = await db_client.fetchrow(query, *update_values)
+                await db_client.execute(query, *customer_update_values)
+            
+            # Update or insert customer profile (in customer_profiles table)
+            profile_fields = ["age", "sex", "diabetes", "hypertension", "pregnancy", "city", "medical_conditions"]
+            profile_update_fields = []
+            profile_insert_fields = ["customer_id"]
+            profile_insert_values = [customer_id]
+            
+            # Build INSERT fields and values, and UPDATE fields
+            # Note: UPDATE clause uses EXCLUDED to reference INSERT values, so we don't need separate parameter numbers
+            for field in profile_fields:
+                if field in profile_data:
+                    profile_insert_fields.append(field)
+                    if field == "medical_conditions":
+                        profile_insert_values.append(json.dumps(profile_data[field]))
+                        profile_update_fields.append(f"{field} = EXCLUDED.{field}")
+                    elif field == "age":
+                        # Ensure age is an integer
+                        age_value = int(profile_data[field]) if profile_data[field] is not None else None
+                        profile_insert_values.append(age_value)
+                        profile_update_fields.append(f"{field} = EXCLUDED.{field}")
+                    else:
+                        profile_insert_values.append(profile_data[field])
+                        profile_update_fields.append(f"{field} = EXCLUDED.{field}")
+            
+            if profile_update_fields:
+                # Use INSERT ... ON CONFLICT to handle both insert and update
+                # EXCLUDED references the values being inserted, avoiding parameter numbering issues
+                update_clause = ", ".join(profile_update_fields)
+                insert_clause = ", ".join(profile_insert_fields)
+                placeholders = ", ".join([f"${i+1}" for i in range(len(profile_insert_values))])
+                
+                query = f"""
+                    INSERT INTO customer_profiles ({insert_clause}, updated_at)
+                    VALUES ({placeholders}, NOW())
+                    ON CONFLICT (customer_id)
+                    DO UPDATE SET {update_clause}, updated_at = NOW()
+                """
+                await db_client.execute(query, *profile_insert_values)
                 logger.info(f"Updated customer profile: {customer_id}")
             
-            return dict(customer) if customer else None
+            # Return updated customer with profile
+            return await DatabaseService.get_customer(customer_id)
         except Exception as e:
             logger.error(f"Error updating customer: {e}", exc_info=True)
             return None
@@ -466,7 +493,8 @@ class DatabaseService:
     @staticmethod
     async def get_session_messages(
         session_id: str,
-        limit: int = 100
+        limit: int = 100,
+        customer_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Get messages for a session
@@ -474,6 +502,7 @@ class DatabaseService:
         Args:
             session_id: Session ID
             limit: Maximum number of messages to return
+            customer_id: Optional customer ID to filter feedback (if provided, only returns feedback from this customer)
         
         Returns:
             List of message dicts
@@ -483,16 +512,37 @@ class DatabaseService:
             return []
         
         try:
-            logger.info(f"Retrieving messages for session_id: {session_id}, limit: {limit}")
-            messages = await db_client.fetch(
-                """
-                SELECT * FROM chat_messages
-                WHERE session_id = $1
-                ORDER BY created_at ASC
-                LIMIT $2
-                """,
-                session_id, limit
-            )
+            logger.info(f"Retrieving messages for session_id: {session_id}, limit: {limit}, customer_id: {customer_id}")
+            
+            if customer_id:
+                # Include feedback only for the specified customer
+                messages = await db_client.fetch(
+                    """
+                    SELECT 
+                        m.*,
+                        f.feedback as user_feedback
+                    FROM chat_messages m
+                    LEFT JOIN message_feedback f ON m.id = f.message_id AND f.customer_id = $3
+                    WHERE m.session_id = $1
+                    ORDER BY m.created_at ASC
+                    LIMIT $2
+                    """,
+                    session_id, limit, customer_id
+                )
+            else:
+                # Get messages without filtering feedback (for admin or when customer_id not needed)
+                messages = await db_client.fetch(
+                    """
+                    SELECT 
+                        m.*,
+                        NULL as user_feedback
+                    FROM chat_messages m
+                    WHERE m.session_id = $1
+                    ORDER BY m.created_at ASC
+                    LIMIT $2
+                    """,
+                    session_id, limit
+                )
             logger.info(f"Found {len(messages)} messages for session_id: {session_id}")
             
             # Parse JSONB fields properly
@@ -534,16 +584,40 @@ class DatabaseService:
     
     @staticmethod
     async def get_customer(customer_id: str) -> Optional[Dict[str, Any]]:
-        """Get customer by ID"""
+        """Get customer by ID with profile data (JOIN with customer_profiles)"""
         if not await db_client.ensure_connected():
             return None
         
         try:
             customer = await db_client.fetchrow(
-                "SELECT * FROM customers WHERE id = $1",
+                """
+                SELECT 
+                    c.*,
+                    cp.age,
+                    cp.sex,
+                    cp.diabetes,
+                    cp.hypertension,
+                    cp.pregnancy,
+                    cp.city,
+                    cp.medical_conditions
+                FROM customers c
+                LEFT JOIN customer_profiles cp ON c.id = cp.customer_id
+                WHERE c.id = $1
+                """,
                 customer_id
             )
-            return dict(customer) if customer else None
+            if customer:
+                customer_dict = dict(customer)
+                # Ensure medical_conditions is a list if it exists
+                if customer_dict.get("medical_conditions") and isinstance(customer_dict["medical_conditions"], str):
+                    try:
+                        customer_dict["medical_conditions"] = json.loads(customer_dict["medical_conditions"])
+                    except:
+                        customer_dict["medical_conditions"] = []
+                elif customer_dict.get("medical_conditions") is None:
+                    customer_dict["medical_conditions"] = []
+                return customer_dict
+            return None
         except Exception as e:
             logger.error(f"Error retrieving customer: {e}", exc_info=True)
             return None
@@ -570,7 +644,7 @@ class DatabaseService:
             if session:
                 session_dict = dict(session)
                 # Get messages
-                messages = await DatabaseService.get_session_messages(session_id)
+                messages = await DatabaseService.get_session_messages(session_id, customer_id=session.get("customer_id"))
                 session_dict["messages"] = messages
                 return session_dict
             return None
@@ -583,50 +657,97 @@ class DatabaseService:
         email: str,
         password_hash: str,
         role: str = "user",
-        age: Optional[int] = None,
-        sex: Optional[str] = None,
-        diabetes: bool = False,
-        hypertension: bool = False,
-        pregnancy: bool = False,
-        city: Optional[str] = None,
-        medical_conditions: Optional[List[str]] = None,
+        profile_data: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Create a new customer"""
+        """Create a new customer (and profile if profile_data provided)"""
         if not await db_client.ensure_connected():
             return None
         
         try:
             customer_id = str(uuid.uuid4())
-            conditions_json = json.dumps(medical_conditions or [])
+            # Insert into customers table (only auth/account info)
             customer = await db_client.fetchrow(
                 """
                 INSERT INTO customers (
-                    id, email, password_hash, role, age, sex, diabetes, 
-                    hypertension, pregnancy, city, medical_conditions, is_active, created_at, updated_at
+                    id, email, password_hash, role, is_active, created_at, updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW(), NOW())
+                VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
                 RETURNING *
                 """,
-                customer_id, email, password_hash, role, age, sex, diabetes,
-                hypertension, pregnancy, city, conditions_json, True
+                customer_id, email, password_hash, role, True
             )
-            return dict(customer) if customer else None
+            
+            # If profile_data provided, create profile
+            if profile_data:
+                profile_fields = ["age", "sex", "diabetes", "hypertension", "pregnancy", "city", "medical_conditions"]
+                profile_insert_fields = ["customer_id"]
+                profile_insert_values = [customer_id]
+                
+                for field in profile_fields:
+                    if field in profile_data:
+                        profile_insert_fields.append(field)
+                        if field == "medical_conditions":
+                            profile_insert_values.append(json.dumps(profile_data[field]))
+                        elif field == "age":
+                            # Ensure age is an integer
+                            age_value = int(profile_data[field]) if profile_data[field] is not None else None
+                            profile_insert_values.append(age_value)
+                        else:
+                            profile_insert_values.append(profile_data[field])
+                
+                if len(profile_insert_fields) > 1:  # More than just customer_id
+                    placeholders = ", ".join([f"${i+1}" for i in range(len(profile_insert_values))])
+                    insert_clause = ", ".join(profile_insert_fields)
+                    await db_client.execute(
+                        f"""
+                        INSERT INTO customer_profiles ({insert_clause}, created_at, updated_at)
+                        VALUES ({placeholders}, NOW(), NOW())
+                        """,
+                        *profile_insert_values
+                    )
+            
+            # Return customer with profile (using get_customer to get JOINed data)
+            return await DatabaseService.get_customer(customer_id)
         except Exception as e:
             logger.error(f"Error creating customer: {e}", exc_info=True)
             return None
     
     @staticmethod
     async def get_customer_by_email(email: str) -> Optional[Dict[str, Any]]:
-        """Get customer by email"""
+        """Get customer by email with profile data (JOIN with customer_profiles)"""
         if not await db_client.ensure_connected():
             return None
         
         try:
             customer = await db_client.fetchrow(
-                "SELECT * FROM customers WHERE email = $1",
+                """
+                SELECT 
+                    c.*,
+                    cp.age,
+                    cp.sex,
+                    cp.diabetes,
+                    cp.hypertension,
+                    cp.pregnancy,
+                    cp.city,
+                    cp.medical_conditions
+                FROM customers c
+                LEFT JOIN customer_profiles cp ON c.id = cp.customer_id
+                WHERE c.email = $1
+                """,
                 email
             )
-            return dict(customer) if customer else None
+            if customer:
+                customer_dict = dict(customer)
+                # Ensure medical_conditions is a list if it exists
+                if customer_dict.get("medical_conditions") and isinstance(customer_dict["medical_conditions"], str):
+                    try:
+                        customer_dict["medical_conditions"] = json.loads(customer_dict["medical_conditions"])
+                    except:
+                        customer_dict["medical_conditions"] = []
+                elif customer_dict.get("medical_conditions") is None:
+                    customer_dict["medical_conditions"] = []
+                return customer_dict
+            return None
         except Exception as e:
             logger.error(f"Error retrieving customer by email: {e}", exc_info=True)
             return None
@@ -641,25 +762,39 @@ class DatabaseService:
             customers = await db_client.fetch(
                 """
                 SELECT 
-                    id,
-                    email,
-                    role,
-                    age,
-                    sex,
-                    diabetes,
-                    hypertension,
-                    pregnancy,
-                    city,
-                    is_active,
-                    created_at,
-                    last_login
-                FROM customers
-                ORDER BY created_at DESC
+                    c.id,
+                    c.email,
+                    c.role,
+                    c.is_active,
+                    c.created_at,
+                    c.last_login,
+                    cp.age,
+                    cp.sex,
+                    cp.diabetes,
+                    cp.hypertension,
+                    cp.pregnancy,
+                    cp.city,
+                    cp.medical_conditions
+                FROM customers c
+                LEFT JOIN customer_profiles cp ON c.id = cp.customer_id
+                ORDER BY c.created_at DESC
                 LIMIT $1
                 """,
                 limit
             )
-            return [dict(customer) for customer in customers]
+            # Parse medical_conditions JSONB for each customer
+            result = []
+            for customer in customers:
+                customer_dict = dict(customer)
+                if customer_dict.get("medical_conditions") and isinstance(customer_dict["medical_conditions"], str):
+                    try:
+                        customer_dict["medical_conditions"] = json.loads(customer_dict["medical_conditions"])
+                    except:
+                        customer_dict["medical_conditions"] = []
+                elif customer_dict.get("medical_conditions") is None:
+                    customer_dict["medical_conditions"] = []
+                result.append(customer_dict)
+            return result
         except Exception as e:
             logger.error(f"Error retrieving all customers: {e}", exc_info=True)
             return []

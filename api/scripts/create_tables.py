@@ -15,7 +15,7 @@ from database.db_client import db_client
 
 # SQL to create all tables
 CREATE_TABLES_SQL = """
--- Create customers table
+-- Create customers table (normalized - only auth and account info)
 CREATE TABLE IF NOT EXISTS customers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -25,18 +25,30 @@ CREATE TABLE IF NOT EXISTS customers (
     role VARCHAR(20) NOT NULL DEFAULT 'user',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     last_login TIMESTAMP,
-    age INTEGER,
-    sex VARCHAR(20),
-    diabetes BOOLEAN NOT NULL DEFAULT FALSE,
-    hypertension BOOLEAN NOT NULL DEFAULT FALSE,
-    pregnancy BOOLEAN NOT NULL DEFAULT FALSE,
-    city VARCHAR(100),
     metadata JSONB
 );
 
 -- Create indexes for customers
 CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
 CREATE INDEX IF NOT EXISTS idx_customers_role ON customers(role);
+
+-- Create customer_profiles table (normalized - profile data separate from auth)
+CREATE TABLE IF NOT EXISTS customer_profiles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID NOT NULL UNIQUE REFERENCES customers(id) ON DELETE CASCADE,
+    age INTEGER,
+    sex VARCHAR(20),
+    diabetes BOOLEAN NOT NULL DEFAULT FALSE,
+    hypertension BOOLEAN NOT NULL DEFAULT FALSE,
+    pregnancy BOOLEAN NOT NULL DEFAULT FALSE,
+    city VARCHAR(100),
+    medical_conditions JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Create indexes for customer_profiles
+CREATE INDEX IF NOT EXISTS idx_customer_profiles_customer_id ON customer_profiles(customer_id);
 
 -- Create refresh_tokens table
 CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -84,6 +96,22 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 -- Create indexes for chat_messages
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id_created_at ON chat_messages(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_role ON chat_messages(role);
+
+-- Create message_feedback table
+CREATE TABLE IF NOT EXISTS message_feedback (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_id UUID NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    feedback VARCHAR(20) NOT NULL CHECK (feedback IN ('positive', 'negative')),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE(message_id, customer_id) -- One feedback per user per message
+);
+
+-- Create indexes for message_feedback
+CREATE INDEX IF NOT EXISTS idx_message_feedback_message_id ON message_feedback(message_id);
+CREATE INDEX IF NOT EXISTS idx_message_feedback_customer_id ON message_feedback(customer_id);
+CREATE INDEX IF NOT EXISTS idx_message_feedback_feedback ON message_feedback(feedback);
 """
 
 async def create_tables():
@@ -121,7 +149,7 @@ async def create_tables():
         
         # Verify tables were created
         print("Verifying tables...")
-        required_tables = ["customers", "refresh_tokens", "chat_sessions", "chat_messages"]
+        required_tables = ["customers", "customer_profiles", "refresh_tokens", "chat_sessions", "chat_messages", "message_feedback"]
         for table in required_tables:
             query = """
                 SELECT EXISTS (

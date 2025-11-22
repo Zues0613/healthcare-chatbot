@@ -10,7 +10,7 @@ import clsx from "clsx";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import "katex/dist/katex.min.css";
-import { Check, Copy, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
+import { Check, Copy, ExternalLink, ChevronDown, ChevronUp, Play, Pause, Square, ThumbsUp, ThumbsDown } from "lucide-react";
 interface CodeBlockProps {
   className?: string;
   children?: React.ReactNode;
@@ -92,6 +92,7 @@ export interface ChatMessageModel {
   content: string;
   timestamp: string;
   citations?: Citation[];
+  userFeedback?: 'positive' | 'negative'; // Feedback from the user
 }
 
 const roleStyles: Record<ChatRole, string> = {
@@ -121,13 +122,20 @@ const avatarLabel: Record<ChatRole, string> = {
 interface ChatMessageProps {
   message: ChatMessageModel;
   index: number;
+  language?: string; // Language code for narration
+  onFeedback?: (messageId: string, feedback: 'positive' | 'negative') => void; // Callback for feedback
 }
 
-function ChatMessage({ message, index }: ChatMessageProps) {
+function ChatMessage({ message, index, language = 'en', onFeedback }: ChatMessageProps) {
   const [formattedTime, setFormattedTime] = useState<string>("");
   const [copiedCitationKey, setCopiedCitationKey] = useState<string | null>(null);
   const [sourcesExpanded, setSourcesExpanded] = useState<boolean>(false);
   const citationCopyTimeoutRef = useRef<number | null>(null);
+  const [narrationState, setNarrationState] = useState<'idle' | 'playing' | 'paused'>('idle');
+  const [copied, setCopied] = useState(false);
+  const [feedbackGiven, setFeedbackGiven] = useState<'positive' | 'negative' | null>(message.userFeedback || null);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const markdownComponents: Components = useMemo(() => ({
     a: ({ children, className, ...props }) => (
@@ -367,8 +375,80 @@ function ChatMessage({ message, index }: ChatMessageProps) {
       if (citationCopyTimeoutRef.current) {
         clearTimeout(citationCopyTimeoutRef.current);
       }
+      // Cleanup narration on unmount
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
     };
   }, []);
+
+  // Narration handlers
+  const handleNarrationPlay = useCallback(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window) || message.role !== 'assistant') return;
+    
+    if (narrationState === 'paused') {
+      window.speechSynthesis.resume();
+      setNarrationState('playing');
+    } else {
+      const utterance = new SpeechSynthesisUtterance(message.content);
+      const langMap: Record<string, string> = {
+        'en': 'en-US',
+        'hi': 'hi-IN',
+        'ta': 'ta-IN',
+        'te': 'te-IN',
+        'kn': 'kn-IN',
+        'ml': 'ml-IN',
+      };
+      utterance.lang = langMap[language] || 'en-US';
+      utterance.rate = 0.92;
+      
+      utterance.onend = () => setNarrationState('idle');
+      utterance.onerror = () => setNarrationState('idle');
+      
+      utteranceRef.current = utterance;
+      window.speechSynthesis.speak(utterance);
+      setNarrationState('playing');
+    }
+  }, [message.content, message.role, language, narrationState]);
+
+  const handleNarrationPause = useCallback(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window && narrationState === 'playing') {
+      window.speechSynthesis.pause();
+      setNarrationState('paused');
+    }
+  }, [narrationState]);
+
+  const handleNarrationStop = useCallback(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setNarrationState('idle');
+      utteranceRef.current = null;
+    }
+  }, []);
+
+  // Copy handler - copies rendered content (not markdown)
+  const handleCopyRendered = useCallback(async () => {
+    if (!contentRef.current) return;
+    
+    // Get text content from the rendered markdown
+    const textContent = contentRef.current.innerText || contentRef.current.textContent || '';
+    
+    try {
+      await navigator.clipboard.writeText(textContent);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.warn('Failed to copy:', error);
+    }
+  }, []);
+
+  // Feedback handlers
+  const handleFeedback = useCallback((feedback: 'positive' | 'negative') => {
+    setFeedbackGiven(feedback);
+    if (onFeedback) {
+      onFeedback(message.id, feedback);
+    }
+  }, [message.id, onFeedback]);
 
   return (
     <article
@@ -427,6 +507,7 @@ function ChatMessage({ message, index }: ChatMessageProps) {
           </time>
         </header>
         <div
+          ref={contentRef}
           className={clsx(
             "prose prose-sm md:prose-base max-w-none break-words leading-relaxed",
             message.role === "user"
@@ -523,6 +604,97 @@ function ChatMessage({ message, index }: ChatMessageProps) {
                 })}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Action buttons for assistant messages - below sources section */}
+        {message.role === "assistant" && (
+          <div className="mt-4 flex items-center gap-2 flex-wrap">
+            {/* Narration controls */}
+            {typeof window !== 'undefined' && 'speechSynthesis' in window && (
+              <div className="flex items-center gap-1 rounded-full border border-white/10 bg-slate-950/60 p-1">
+                {narrationState === 'playing' ? (
+                  <button
+                    type="button"
+                    onClick={handleNarrationPause}
+                    className="p-1.5 rounded-full hover:bg-slate-900/70 transition text-emerald-200 hover:text-emerald-100"
+                    title="Pause narration"
+                    aria-label="Pause narration"
+                  >
+                    <Pause className="h-4 w-4" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleNarrationPlay}
+                    className="p-1.5 rounded-full hover:bg-slate-900/70 transition text-emerald-200 hover:text-emerald-100"
+                    title="Play narration"
+                    aria-label="Play narration"
+                  >
+                    <Play className="h-4 w-4" />
+                  </button>
+                )}
+                {narrationState !== 'idle' && (
+                  <button
+                    type="button"
+                    onClick={handleNarrationStop}
+                    className="p-1.5 rounded-full hover:bg-slate-900/70 transition text-emerald-200 hover:text-emerald-100"
+                    title="Stop narration"
+                    aria-label="Stop narration"
+                  >
+                    <Square className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Feedback buttons */}
+            <div className="flex items-center gap-1 rounded-full border border-white/10 bg-slate-950/60 p-1">
+              <button
+                type="button"
+                onClick={() => handleFeedback('positive')}
+                className={clsx(
+                  "p-1.5 rounded-full transition",
+                  feedbackGiven === 'positive'
+                    ? "bg-emerald-500/20 text-emerald-300"
+                    : "hover:bg-slate-900/70 text-slate-300 hover:text-emerald-200"
+                )}
+                title="Helpful"
+                aria-label="Mark as helpful"
+              >
+                <ThumbsUp className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFeedback('negative')}
+                className={clsx(
+                  "p-1.5 rounded-full transition",
+                  feedbackGiven === 'negative'
+                    ? "bg-red-500/20 text-red-300"
+                    : "hover:bg-slate-900/70 text-slate-300 hover:text-red-200"
+                )}
+                title="Not helpful"
+                aria-label="Mark as not helpful"
+              >
+                <ThumbsDown className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Copy button */}
+            <button
+              type="button"
+              onClick={handleCopyRendered}
+              className={clsx(
+                "p-1.5 rounded-full border border-white/10 bg-slate-950/60 transition",
+                copied
+                  ? "bg-emerald-500/20 text-emerald-300"
+                  : "hover:bg-slate-900/70 text-slate-300 hover:text-emerald-200"
+              )}
+              title="Copy response"
+              aria-label="Copy response"
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            </button>
           </div>
         )}
       </div>

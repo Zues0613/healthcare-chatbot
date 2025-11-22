@@ -10,16 +10,16 @@ logger = logging.getLogger("health_assistant")
 
 # SQL injection patterns - more specific to avoid false positives
 SQL_INJECTION_PATTERNS = [
-    # SQL keywords in suspicious contexts
-    r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|EXECUTE|UNION|TRUNCATE)\s+.*FROM|INTO|WHERE)",
+    # SQL keywords in suspicious contexts - requires SQL keyword BEFORE FROM/INTO/WHERE
+    r"\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|EXECUTE|UNION|TRUNCATE)\s+.*?\b(FROM|INTO|WHERE)\b",
     # SQL comment patterns (but not em dashes in text)
     r"(--\s|/\*|\*/)",
-    # SQL injection attempts with OR/AND
+    # SQL injection attempts with OR/AND (specific patterns only)
     r"(\b(OR|AND)\s+\d+\s*=\s*\d+)",
     r"(\b(OR|AND)\s+['\"]\w+['\"]\s*=\s*['\"]\w+['\"])",
     # Suspicious patterns: semicolons followed by SQL keywords, or multiple quotes in suspicious context
     r"(;\s*(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|EXECUTE|UNION))",
-    r"('.*'|\".*\")\s*(OR|AND|UNION)",
+    r"(['\"].*?['\"])\s*(OR|AND|UNION)\s+",
 ]
 
 # XSS patterns
@@ -252,17 +252,55 @@ def validate_chat_input(text: str) -> str:
     # Check for SQL injection - use more lenient patterns for chat messages
     # Only flag actual SQL injection attempts, not normal punctuation like apostrophes
     chat_sql_patterns = [
-        # SQL keywords followed by FROM/INTO/WHERE (actual SQL statements)
-        r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|EXECUTE|UNION|TRUNCATE)\s+.*\b(FROM|INTO|WHERE|SET|VALUES)\b)",
-        # SQL comment patterns (-- followed by space, or /* */)
-        r"(--\s|/\*|\*/)",
-        # SQL injection attempts with OR/AND
-        r"(\b(OR|AND)\s+\d+\s*=\s*\d+)",
-        r"(\b(OR|AND)\s+['\"]\w+['\"]\s*=\s*['\"]\w+['\"])",
-        # Semicolons followed by SQL keywords (command chaining)
-        r"(;\s*(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|EXECUTE|UNION))",
-        # Quoted strings followed by SQL operators (suspicious)
-        r"(['\"].*['\"])\s*(OR|AND|UNION)\s+",
+        # SQL comment patterns - catch '--' after quotes or in suspicious context
+        # Pattern 1: Word/identifier followed by quote then -- (e.g., "admin'--")
+        r"\w+['\"]--",
+        # Pattern 2: Quote followed by optional text and then -- (e.g., "' OR 1=1--", "'--")
+        r"['\"][^'\"]*--",
+        # Pattern 3: /* or */ comment markers  
+        r"/\*",
+        r"\*/",
+        
+        # SQL injection with OR/AND - classic patterns like ' OR '1'='1
+        # Pattern 1: Quote (single or double), space, OR/AND, space, then '1'='1 (most common)
+        # Match: ' OR '1'='1, " OR "1"="1
+        r"['\"]\s+(OR|AND)\s+['\"]1['\"]\s*=\s*['\"]1['\"]",
+        # Pattern 2: Quote, space, OR/AND, space, then quoted string = quoted string
+        # Match: ' OR 'x'='x, " OR "a"="a
+        r"['\"]\s+(OR|AND)\s+['\"][^'\"]*['\"]\s*=\s*['\"][^'\"]*['\"]",
+        # Pattern 3: Quote, space, OR/AND, then number = number (no quotes)
+        # Match: ' OR 1=1, " OR 2=2
+        r"['\"]\s+(OR|AND)\s+\d+\s*=\s*\d+",
+        # Pattern 4: Word/identifier, quote, space, OR/AND, then pattern
+        # Match: admin' OR '1'='1, 1' OR '1'='1
+        r"\w+['\"]\s+(OR|AND)\s+['\"][^'\"]*['\"]\s*=\s*['\"][^'\"]*['\"]",
+        # Pattern 5: Quote at start, OR/AND (less strict on spaces for edge cases)
+        # Match: 'OR'1'='1 (no spaces), 'OR 1=1
+        r"['\"]\s*(OR|AND)\s*['\"]?[0-9xXa-zA-Z]+['\"]?\s*=\s*['\"]?[0-9xXa-zA-Z]+['\"]?",
+        
+        # Semicolons followed by SQL keywords (command chaining - clear SQL injection)
+        r"['\"]?\s*;\s*(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|EXECUTE|UNION|TRUNCATE)",
+        
+        # UNION SELECT patterns (clear SQL injection)
+        r"['\"]?\s*UNION\s+(ALL\s+)?SELECT",
+        r"UNION\s+(ALL\s+)?SELECT\s+.*?\s+FROM",
+        
+        # SQL DDL statements - DROP/CREATE/ALTER/TRUNCATE with TABLE/DATABASE
+        r"\b(DROP|CREATE|ALTER|TRUNCATE)\s+(TABLE|DATABASE|SCHEMA|INDEX)\s+\w+",
+        
+        # SQL DML statements - only match actual SQL syntax, not natural language
+        # Be very strict: require SQL-like context
+        # Pattern 1: SELECT/INSERT/DELETE with FROM/INTO + SQL context (WHERE, semicolon, comment)
+        # Only match if there's SQL-like context after the table (excludes natural language)
+        r"\b(SELECT|INSERT|DELETE)\s+(?:\*|[\w,\s]+)\s+(FROM|INTO)\s+\w+\s+(WHERE|;|--|\s+(UNION|OR|AND))",
+        # Pattern 2: UPDATE ... SET (clear SQL syntax)
+        r"\bUPDATE\s+\w+\s+SET\s+",
+        
+        # Exclude common English phrases with determiners (to reduce false positives)
+        # But still catch actual SQL with WHERE clauses or semicolons
+        
+        # Quoted strings immediately followed by SQL operators (suspicious)
+        r"['\"][^'\"]*['\"]\s+(OR|AND|UNION)\s+",
     ]
     
     for pattern in chat_sql_patterns:
@@ -270,8 +308,19 @@ def validate_chat_input(text: str) -> str:
             logger.warning(f"Potential SQL injection in chat input: {text[:50]}")
             raise ValueError("Invalid input: potentially dangerous content detected")
     
-    # Sanitize but allow basic formatting (for chat messages)
-    text = sanitize_string(text, max_length=5000, allow_html=True)
+    # For chat messages, we've already checked SQL patterns above with more lenient patterns
+    # Just do basic sanitization (remove null bytes, trim, length check) without SQL pattern checking
+    # to avoid double-checking with more aggressive patterns
+    
+    # Remove null bytes
+    text = text.replace('\x00', '')
+    
+    # Trim whitespace
+    text = text.strip()
+    
+    # Limit length (already checked above, but ensure)
+    if len(text) > 5000:
+        text = text[:5000]
     
     return text
 

@@ -1565,12 +1565,13 @@ def _format_conversation_history(messages: List[Dict[str, Any]]) -> List[Dict[st
     return formatted
 
 
-async def _get_conversation_history(session_id: Optional[str]) -> List[Dict[str, str]]:
+async def _get_conversation_history(session_id: Optional[str], customer_id: Optional[str] = None) -> List[Dict[str, str]]:
     """
     Retrieve conversation history for a session (with Redis caching for performance)
     
     Args:
         session_id: Session ID to retrieve history for
+        customer_id: Optional customer ID to filter feedback (if provided)
         
     Returns:
         List of formatted messages for OpenAI API
@@ -1594,7 +1595,7 @@ async def _get_conversation_history(session_id: Optional[str]) -> List[Dict[str,
         # If not in cache, fetch from database
         logger.info(f"❌ CACHE MISS for conversation history: {session_id}, fetching from database")
         db_start = time.perf_counter()
-        messages = await db_service.get_session_messages(session_id, limit=20)
+        messages = await db_service.get_session_messages(session_id, limit=20, customer_id=customer_id)
         db_time = time.perf_counter() - db_start
         logger.info(f"📊 Database query took: {db_time*1000:.2f}ms")
         
@@ -2294,18 +2295,31 @@ async def save_chat_messages_background(
         else:
             logger.warning(f"⚠️ No citations to save for session {session_id[:8]}")
         
+        # Prepare metadata with English answer for non-English prompts
+        metadata = assistant_response.metadata.copy() if assistant_response.metadata else {}
+        
+        # For non-English prompts: store both English and translated answers
+        # For English prompts: store English answer directly
+        detected_lang = metadata.get("detected_language", target_lang)
+        if detected_lang != "en" and "english_answer" in metadata:
+            # Store English answer in metadata for non-English prompts
+            metadata["english_answer"] = metadata["english_answer"]
+        elif detected_lang == "en":
+            # For English prompts, store English answer directly (answer field already has it)
+            pass
+        
         # Save assistant response
         await db_service.save_chat_message(
             session_id=session_id,
             role="assistant",
             message_text=user_message,  # User's original question
             language=target_lang,
-            answer=assistant_response.answer,
+            answer=assistant_response.answer,  # This is the translated answer for non-English, English answer for English
             route=assistant_response.route,
             safety_data=safety_dict,
             facts=assistant_response.facts,
             citations=assistant_response.citations,  # Citations with URLs are saved to NeonDB as JSONB
-            metadata=assistant_response.metadata,
+            metadata=metadata,  # Contains english_answer for non-English prompts
         )
         logger.info(f"✅ Saved message with {len(assistant_response.citations) if assistant_response.citations else 0} citations to database")
         
@@ -2468,7 +2482,7 @@ async def chat(
             # Fall back to database if not provided in request
             try:
                 logger.info(f"Retrieving conversation history for session_id: {session_id}")
-                conversation_history = await _get_conversation_history(session_id)
+                conversation_history = await _get_conversation_history(session_id, customer_id=customer_id)
                 if conversation_history:
                     logger.info(f"Retrieved {len(conversation_history)} previous messages for context")
                     logger.debug(f"Conversation history: {[msg.get('role') + ': ' + msg.get('content', '')[:50] for msg in conversation_history[:3]]}")
@@ -2691,9 +2705,11 @@ async def process_chat_request_stream(
         )
         facts_en.append({"type": "personalization", "data": personalization_notes})
     
-    # Stream the answer generation
+    # Generate the answer (collect all chunks first if translation is needed)
     answer_en_chunks = []
     generation_start = time.perf_counter()
+    needs_translation = detected_lang != "en" and openai_client and model
+    
     if openai_client and model:
         # Use context if available, otherwise use empty string
         rag_context = context if context else ""
@@ -2708,8 +2724,9 @@ async def process_chat_request_stream(
             conversation_history=conversation_history,
         ):
             answer_en_chunks.append(chunk)
-            # Send chunk to client (as JSON for SSE)
-            yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+            # Only stream English chunks if no translation is needed
+            if not needs_translation:
+                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
         pipeline_timings["ai_generation"] = time.perf_counter() - generation_start
         logger.info(f"✅ AI generation completed: {pipeline_timings['ai_generation']:.2f}s ({len(''.join(answer_en_chunks))} chars)")
     else:
@@ -2725,12 +2742,13 @@ async def process_chat_request_stream(
         # Stream the fallback answer character by character for consistency
         for char in fallback_answer:
             answer_en_chunks.append(char)
-            yield f"data: {json.dumps({'type': 'chunk', 'content': char})}\n\n"
+            if not needs_translation:
+                yield f"data: {json.dumps({'type': 'chunk', 'content': char})}\n\n"
     
     # Combine all chunks
     answer_en = "".join(answer_en_chunks)
     
-    # Translate if needed
+    # Translate if needed, then stream the translated answer
     translate_back_start = time.perf_counter()
     if detected_lang == "en":
         answer = answer_en
@@ -2745,8 +2763,10 @@ async def process_chat_request_stream(
         )
         pipeline_timings["translation_back"] = time.perf_counter() - translate_back_start
         logger.info(f"✅ Translation back completed: {pipeline_timings.get('translation_back', 0)*1000:.2f}ms")
-        # Send final translated answer
-        yield f"data: {json.dumps({'type': 'translated', 'content': answer})}\n\n"
+        # Stream the translated answer word by word to maintain streaming effect
+        words = re.findall(r'\S+|\s+', answer)  # Split into words and spaces
+        for word in words:
+            yield f"data: {json.dumps({'type': 'chunk', 'content': word})}\n\n"
     else:
         answer = answer_en
     
@@ -2767,6 +2787,13 @@ async def process_chat_request_stream(
             pipeline_timings["disclaimer_translation"] = time.perf_counter() - disclaimer_start
         else:
             disclaimer = disclaimer_en
+        
+        # Stream disclaimer (always stream, whether translated or not)
+        disclaimer_text = "\n\n" + disclaimer
+        words = re.findall(r'\S+|\s+', disclaimer_text)
+        for word in words:
+            yield f"data: {json.dumps({'type': 'chunk', 'content': word})}\n\n"
+        
         answer += "\n\n" + disclaimer
     
     # Log total pipeline timing
@@ -2802,6 +2829,10 @@ async def process_chat_request_stream(
             "detected_language": detected_lang,
         }
     }
+    
+    # Store English answer in metadata for non-English prompts (for DB persistence)
+    if detected_lang != "en":
+        completion_data["metadata"]["english_answer"] = answer_en
     
     # Add session_id and customer_id to metadata if available
     if session_id:
@@ -2891,7 +2922,7 @@ async def chat_stream(
             # Fall back to database if not provided in request
             try:
                 logger.info(f"Retrieving conversation history for session_id: {session_id}")
-                conversation_history = await _get_conversation_history(session_id)
+                conversation_history = await _get_conversation_history(session_id, customer_id=customer_id)
                 if conversation_history:
                     logger.info(f"Retrieved {len(conversation_history)} previous messages for context")
                     logger.debug(f"Conversation history: {[msg.get('role') + ': ' + msg.get('content', '')[:50] for msg in conversation_history[:3]]}")
@@ -3151,7 +3182,7 @@ async def voice_chat(
         conversation_history = []
         if session_id and db_client.is_connected():
             try:
-                conversation_history = await _get_conversation_history(session_id)
+                conversation_history = await _get_conversation_history(session_id, customer_id=customer_id)
                 if conversation_history:
                     logger.debug(f"Retrieved {len(conversation_history)} previous messages for context")
             except Exception as e:
@@ -3497,7 +3528,7 @@ async def get_session_messages(
         return filtered_cached
     
     # If not in cache, fetch from database
-    messages = await db_service.get_session_messages(session_id, limit=limit)
+    messages = await db_service.get_session_messages(session_id, limit=limit, customer_id=user_id)
     result = []
     for message in messages:
         # Parse citations from JSONB if it's a string
@@ -3623,6 +3654,84 @@ async def delete_session(
             logger.warning(f"Failed to invalidate cache after session deletion: {e}")
     
     return {"success": True, "message": "Session deleted successfully"}
+
+
+@app.post("/message/{message_id}/feedback")
+async def submit_feedback(
+    message_id: str,
+    request: Request,
+    user: dict = Depends(require_auth)
+):
+    """
+    Submit feedback for a chat message (thumbs up/down)
+    Stores feedback in dedicated message_feedback table
+    """
+    if not db_client.is_connected():
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        body = await request.json()
+        feedback = body.get("feedback")  # 'positive' or 'negative'
+        
+        if feedback not in ["positive", "negative"]:
+            raise HTTPException(status_code=400, detail="Feedback must be 'positive' or 'negative'")
+        
+        # Validate message_id format
+        from .auth.validation import validate_uuid
+        try:
+            message_id = validate_uuid(message_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid message ID format: {str(e)}")
+        
+        # Get the message to verify it exists and get session info
+        message = await db_client.fetchrow(
+            """
+            SELECT m.*, s.customer_id 
+            FROM chat_messages m
+            JOIN chat_sessions s ON m.session_id = s.id
+            WHERE m.id = $1
+            """,
+            message_id
+        )
+        
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+        
+        # Verify message belongs to user (unless admin)
+        user_role = user.get("role", "user")
+        user_id = user.get("user_id")
+        
+        if user_role != "admin" and message.get("customer_id") != user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only provide feedback on your own messages"
+            )
+        
+        # Insert or update feedback in message_feedback table
+        # Using ON CONFLICT to handle updates if user changes their feedback
+        await db_client.execute(
+            """
+            INSERT INTO message_feedback (message_id, customer_id, feedback, updated_at)
+            VALUES ($1, $2, $3, NOW())
+            ON CONFLICT (message_id, customer_id)
+            DO UPDATE SET 
+                feedback = EXCLUDED.feedback,
+                updated_at = NOW()
+            """,
+            message_id,
+            user_id,
+            feedback
+        )
+        
+        logger.info(f"Feedback submitted: message_id={message_id[:8]}, customer_id={user_id[:8] if user_id else 'N/A'}, feedback={feedback}")
+        
+        return JSONResponse(content={"success": True, "message": "Feedback submitted"})
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error submitting feedback: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to submit feedback")
 
 
 @app.get("/session/{session_id}")
