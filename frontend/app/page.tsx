@@ -1179,7 +1179,7 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
   // This ensures the loading animation shows in the proper context, not on a blank screen
   if (!isAuthChecked && !initialSessionId) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-950">
+      <div className="flex h-screen items-center justify-center bg-slate-900">
         <div className="w-full max-w-4xl px-4">
           <LoadingSkeleton variant="message" count={3} />
         </div>
@@ -1302,8 +1302,13 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
         onClose={() => setDeleteConfirmModal({ isOpen: false, sessionId: null })}
         onConfirm={confirmDeleteSession}
       />
-      <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_15%,rgba(16,185,129,0.55),transparent_55%),radial-gradient(circle_at_85%_5%,rgba(34,197,94,0.4),transparent_55%),linear-gradient(180deg,rgba(2,6,23,0.92),rgba(2,6,23,0.95))]" />
+      <div className="relative min-h-screen overflow-hidden bg-slate-900 text-slate-100">
+        {/* Consistent background matching landing page - brighter and more visible */}
+        <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_15%_20%,rgba(16,185,129,0.40),transparent_55%),radial-gradient(circle_at_85%_15%,rgba(34,197,94,0.38),transparent_55%),radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.35),transparent_60%),radial-gradient(circle_at_20%_90%,rgba(34,197,94,0.32),transparent_55%)]" />
+        <div className="pointer-events-none absolute top-[-8rem] left-[-6rem] h-72 w-72 rounded-full bg-emerald-500/45 opacity-70 mix-blend-screen blur-3xl" />
+        <div className="pointer-events-none absolute top-[-4rem] right-[-4rem] h-64 w-64 rounded-full bg-green-500/40 opacity-70 mix-blend-screen blur-3xl" />
+        <div className="pointer-events-none absolute bottom-[-6rem] right-[-10rem] h-80 w-80 rounded-full bg-teal-500/45 opacity-70 mix-blend-screen blur-3xl" />
+        <div className="pointer-events-none absolute bottom-[-8rem] left-[-8rem] h-72 w-72 rounded-full bg-emerald-500/40 opacity-70 mix-blend-screen blur-3xl" />
         <div className="relative z-10">
       <aside
         className={sidebarClasses}
@@ -1324,6 +1329,14 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
               Care Console
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen(false)}
+            className="flex-shrink-0 rounded-full border border-white/20 p-1.5 text-slate-400 transition hover:border-white/40 hover:bg-slate-800/50 hover:text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+            aria-label="Close sidebar"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
         </div>
 
         <div className="flex-1 flex flex-col min-h-0 pt-8 sm:pt-4">
@@ -1643,7 +1656,7 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
               <div className="relative flex h-full flex-col">
                 <div
                   ref={scrollContainerRef}
-                  className="flex-1 overflow-y-auto px-3 py-4 sm:px-5 lg:px-6"
+                  className="flex-1 overflow-y-auto px-3 pt-12 pb-4 sm:px-5 sm:pt-16 lg:px-6 lg:pt-20"
                   aria-live="polite"
                   aria-busy={isLoading || isLoadingSession}
                 >
@@ -1653,7 +1666,7 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                     </div>
                   )}
                   <div
-                    className="mx-auto flex w-full flex-col gap-4 px-1 sm:px-2 lg:max-w-3xl lg:px-3"
+                    className="mx-auto flex w-full flex-col gap-4 px-1 pt-4 sm:px-2 sm:pt-6 lg:max-w-3xl lg:px-3 lg:pt-8"
                     role="list"
                     aria-live="polite"
                   >

@@ -200,15 +200,15 @@ const dataHighlights = [
 
 export default function LandingPage() {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
-      {/* Consistent background matching hero section - no darkening gradients */}
-      <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_15%_20%,rgba(16,185,129,0.25),transparent_55%),radial-gradient(circle_at_85%_15%,rgba(34,197,94,0.24),transparent_55%),radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.20),transparent_60%),radial-gradient(circle_at_20%_90%,rgba(34,197,94,0.18),transparent_55%)]" />
-      <div className={gradientSpot("top-[-8rem] left-[-6rem]", "bg-emerald-500/30", "h-72 w-72")} />
-      <div className={gradientSpot("top-[-4rem] right-[-4rem]", "bg-green-500/25", "h-64 w-64")} />
-      <div className={gradientSpot("bottom-[-6rem] right-[-10rem]", "bg-teal-500/30", "h-80 w-80")} />
-      <div className={gradientSpot("bottom-[-8rem] left-[-8rem]", "bg-emerald-500/25", "h-72 w-72")} />
+    <div className="relative min-h-screen overflow-hidden bg-slate-900 text-slate-100">
+      {/* Consistent background matching hero section - brighter and more visible */}
+      <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_15%_20%,rgba(16,185,129,0.40),transparent_55%),radial-gradient(circle_at_85%_15%,rgba(34,197,94,0.38),transparent_55%),radial-gradient(circle_at_50%_100%,rgba(16,185,129,0.35),transparent_60%),radial-gradient(circle_at_20%_90%,rgba(34,197,94,0.32),transparent_55%)]" />
+      <div className={gradientSpot("top-[-8rem] left-[-6rem]", "bg-emerald-500/45", "h-72 w-72")} />
+      <div className={gradientSpot("top-[-4rem] right-[-4rem]", "bg-green-500/40", "h-64 w-64")} />
+      <div className={gradientSpot("bottom-[-6rem] right-[-10rem]", "bg-teal-500/45", "h-80 w-80")} />
+      <div className={gradientSpot("bottom-[-8rem] left-[-8rem]", "bg-emerald-500/40", "h-72 w-72")} />
 
-      <header className="sticky top-0 z-50 border-b border-white/5 bg-slate-950/60 backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-white/5 bg-slate-900/60 backdrop-blur-xl">
         <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-5 md:py-6 lg:px-10">
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
             {/* Left: Logo + Branding - Always at extreme left */}
@@ -675,7 +675,7 @@ export default function LandingPage() {
         </section>
       </main>
 
-      <footer className="relative z-10 border-t border-white/5 bg-slate-950/80 py-8 text-sm text-slate-400">
+      <footer className="relative z-10 border-t border-white/5 bg-slate-900/80 py-8 text-sm text-slate-400">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-4 px-6 sm:flex-row lg:px-10">
           <p>© {new Date().getFullYear()} Health Companion. Crafted with care and safety in mind.</p>
           <div className="flex items-center gap-4">
