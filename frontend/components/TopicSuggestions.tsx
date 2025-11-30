@@ -114,7 +114,7 @@ export default function TopicSuggestions({ onSuggestionSelect, onAfterSelect }: 
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               placeholder="Search topics, e.g. headache, diabetes, stress"
-              className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-10 py-2 text-sm text-slate-100 shadow-inner shadow-black/20 transition focus:border-emerald-300/60 focus:outline-none focus:ring-4 focus:ring-emerald-500/15"
+              className="w-full rounded-xl sm:rounded-2xl border border-white/10 bg-slate-950/70 px-9 sm:px-10 py-2.5 sm:py-2 min-h-[44px] text-sm sm:text-base text-slate-100 shadow-inner shadow-black/20 transition focus:border-emerald-300/60 focus:outline-none focus:ring-4 focus:ring-emerald-500/15"
               aria-label="Search care topics"
             />
           </div>
@@ -133,7 +133,7 @@ export default function TopicSuggestions({ onSuggestionSelect, onAfterSelect }: 
                     setSearchTerm("");
                   }}
                   className={clsx(
-                    "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+                    "inline-flex items-center gap-1.5 sm:gap-2 rounded-full border px-2.5 sm:px-3 py-2 sm:py-1.5 min-h-[44px] text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
                     isActive
                       ? "border-emerald-400/70 bg-emerald-500/20 text-emerald-100 focus-visible:outline-emerald-300"
                       : "border-white/10 bg-slate-900/60 text-slate-200 hover:border-emerald-300/50 hover:text-emerald-100 focus-visible:outline-emerald-200"
@@ -199,7 +199,7 @@ export default function TopicSuggestions({ onSuggestionSelect, onAfterSelect }: 
                 setSearchTerm(event.target.value);
               }}
               placeholder="Search topics, e.g. headache, diabetes, stress"
-              className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-10 py-2 text-sm text-slate-100 shadow-inner shadow-black/20 transition focus:border-emerald-300/60 focus:outline-none focus:ring-4 focus:ring-emerald-500/15"
+              className="w-full rounded-xl sm:rounded-2xl border border-white/10 bg-slate-950/70 px-9 sm:px-10 py-2.5 sm:py-2 min-h-[44px] text-sm sm:text-base text-slate-100 shadow-inner shadow-black/20 transition focus:border-emerald-300/60 focus:outline-none focus:ring-4 focus:ring-emerald-500/15"
               aria-label="Search care topics"
             />
           </div>
