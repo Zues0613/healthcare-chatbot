@@ -208,14 +208,14 @@ export default function LandingPage() {
       <div className={gradientSpot("bottom-[-6rem] right-[-10rem]", "bg-teal-500/45", "h-80 w-80")} />
       <div className={gradientSpot("bottom-[-8rem] left-[-8rem]", "bg-emerald-500/40", "h-72 w-72")} />
 
-      <header className="sticky top-0 z-50 border-b border-white/5 bg-slate-900/60 backdrop-blur-xl">
-        <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-5 md:py-6 lg:px-10">
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
-            {/* Left: Logo + Branding - Always at extreme left */}
-            <div className="flex items-center justify-start gap-2 sm:gap-3">
-              <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 text-sm font-semibold text-white shadow-[0_15px_35px_rgba(16,185,129,0.35)] sm:h-10 sm:w-10 sm:text-lg">
+      <header className="sticky top-0 z-50 border-b border-white/5 bg-slate-900/60 backdrop-blur-xl w-full max-w-full overflow-x-hidden">
+        <div className="mx-auto w-full max-w-6xl px-3 py-3 sm:px-4 sm:py-4 md:px-6 md:py-5 lg:px-10 md:py-6">
+          <div className="flex items-center justify-between gap-2 sm:gap-4">
+            {/* Left: Logo + Branding */}
+            <div className="flex items-center justify-start gap-1.5 sm:gap-2 md:gap-3 min-w-0 flex-1">
+              <span className="flex h-7 w-7 sm:h-8 sm:w-8 md:h-10 md:w-10 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 text-xs sm:text-sm md:text-lg font-semibold text-white shadow-[0_15px_35px_rgba(16,185,129,0.35)]">
                 <svg
-                  className="h-5 w-5 sm:h-6 sm:w-6"
+                  className="h-4 w-4 sm:h-5 sm:w-5 md:h-6 md:w-6"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -228,53 +228,53 @@ export default function LandingPage() {
                   />
                 </svg>
               </span>
-              <div className="flex-shrink-0">
-                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-300/80 sm:text-xs whitespace-nowrap">
+              <div className="flex-shrink-0 min-w-0">
+                <p className="text-[0.6rem] sm:text-[0.65rem] md:text-xs font-semibold uppercase tracking-[0.28em] sm:tracking-[0.32em] text-emerald-300/80 whitespace-nowrap truncate">
                   Health Companion
                 </p>
-                <p className="text-xs font-semibold text-white sm:text-sm whitespace-nowrap">Care Intelligence Platform</p>
+                <p className="text-[0.65rem] sm:text-xs md:text-sm font-semibold text-white whitespace-nowrap truncate">Care Intelligence Platform</p>
               </div>
             </div>
             
-            {/* Center: Navigation Links - Always centered */}
-            <nav className="hidden items-center justify-center gap-4 text-xs text-slate-200 md:flex md:gap-6 md:text-sm lg:gap-8">
+            {/* Center: Navigation Links - Hidden on mobile, shown on desktop */}
+            <nav className="hidden items-center justify-center gap-3 text-xs text-slate-200 md:flex md:gap-4 md:text-sm lg:gap-6 xl:gap-8">
               <NavLink
                 href="#features"
-                className="text-slate-200 transition-colors hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 whitespace-nowrap"
+                className="text-slate-200 transition-colors hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 whitespace-nowrap px-2 py-1.5 min-h-[44px] flex items-center"
               >
                 Features
               </NavLink>
               <NavLink
                 href="#workflows"
-                className="text-slate-200 transition-colors hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 whitespace-nowrap"
+                className="text-slate-200 transition-colors hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 whitespace-nowrap px-2 py-1.5 min-h-[44px] flex items-center"
               >
                 Workflows
               </NavLink>
               <NavLink
                 href="#insights"
-                className="text-slate-200 transition-colors hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 whitespace-nowrap"
+                className="text-slate-200 transition-colors hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 whitespace-nowrap px-2 py-1.5 min-h-[44px] flex items-center"
               >
                 Insights
               </NavLink>
               <NavLink
                 href="#cta"
-                className="text-slate-200 transition-colors hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 whitespace-nowrap"
+                className="text-slate-200 transition-colors hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 whitespace-nowrap px-2 py-1.5 min-h-[44px] flex items-center"
               >
                 Contact
               </NavLink>
             </nav>
             
-            {/* Right: Action Buttons - Always at extreme right */}
-            <div className="flex items-center justify-end gap-2 sm:gap-3">
+            {/* Right: Action Buttons */}
+            <div className="flex items-center justify-end gap-1.5 sm:gap-2 md:gap-3 flex-shrink-0">
               <NavLink
                 href="#insights"
-                className="hidden rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:border-emerald-400/50 hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 sm:inline-flex sm:px-4 sm:py-2 sm:text-sm whitespace-nowrap"
+                className="hidden sm:inline-flex rounded-full border border-white/10 px-3 py-2 min-h-[44px] text-xs font-medium text-slate-200 transition-colors hover:border-emerald-400/50 hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 md:px-4 md:text-sm whitespace-nowrap items-center"
               >
                 View Insights
               </NavLink>
               <Link
                 href="/auth"
-                className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 px-3 py-1.5 text-xs font-semibold text-white shadow-[0_18px_40px_rgba(16,185,129,0.35)] transition-all hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 sm:gap-2 sm:px-4 sm:py-2 sm:text-sm whitespace-nowrap"
+                className="inline-flex items-center gap-1 sm:gap-1.5 md:gap-2 rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 px-3 py-2 min-h-[44px] text-xs font-semibold text-white shadow-[0_18px_40px_rgba(16,185,129,0.35)] transition-all hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 sm:px-4 sm:text-sm whitespace-nowrap"
               >
                 Get Started
               </Link>
@@ -283,33 +283,33 @@ export default function LandingPage() {
         </div>
       </header>
 
-      <main className="relative z-10">
+      <main className="relative z-10 w-full max-w-full overflow-x-hidden">
         <HeroSection />
 
-        <section id="features" className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 sm:py-16 md:py-20 lg:px-10 lg:py-24" style={{ scrollMarginTop: '80px' }}>
-          <div className="mb-8 flex flex-col gap-3 text-center sm:mb-10 sm:gap-4 sm:text-left">
-            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-200/80 sm:text-xs">Why teams choose us</p>
-            <h2 className="text-2xl font-semibold text-white sm:text-3xl md:text-4xl">Features crafted for clinical-grade conversations.</h2>
-            <p className="max-w-3xl text-xs leading-relaxed text-slate-200/80 sm:text-sm">
+        <section id="features" className="mx-auto w-full max-w-6xl px-3 py-8 sm:px-4 sm:py-12 md:px-6 md:py-16 lg:px-10 lg:py-20 xl:py-24" style={{ scrollMarginTop: '80px' }}>
+          <div className="mb-6 sm:mb-8 md:mb-10 flex flex-col gap-2 sm:gap-3 text-center md:gap-4 md:text-left">
+            <p className="text-[0.6rem] sm:text-[0.65rem] md:text-xs font-semibold uppercase tracking-[0.28em] sm:tracking-[0.32em] text-emerald-200/80">Why teams choose us</p>
+            <h2 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-semibold text-white leading-tight">Features crafted for clinical-grade conversations.</h2>
+            <p className="max-w-3xl text-sm sm:text-xs md:text-sm leading-relaxed text-slate-200/80 mx-auto md:mx-0">
               We blend AI expressiveness with deterministic checks. Nine core features form the foundation of a production-ready, scalable, and secure healthcare chatbot application. Each feature represents an orchestrated system ensuring safe, multilingual, empathetic care guidance.
             </p>
           </div>
-          <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:gap-4 md:gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
             {features.map((feature) => (
               <FeatureCard key={feature.title} feature={feature} />
             ))}
           </div>
         </section>
 
-        <section id="workflows" className="mx-auto w-full max-w-7xl px-6 py-16 lg:px-10 lg:py-20" style={{ scrollMarginTop: '80px' }}>
-          <div className="mb-8 flex flex-col gap-3 text-center sm:mb-10 sm:gap-4">
-            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-200/80 sm:text-xs">Step-by-step clarity</p>
-            <h2 className="text-2xl font-semibold text-white sm:text-3xl md:text-4xl">Workflows designed for real people.</h2>
-            <p className="mx-auto max-w-3xl text-xs leading-relaxed text-slate-200/80 sm:text-sm">
+        <section id="workflows" className="mx-auto w-full max-w-7xl px-3 sm:px-4 md:px-6 py-12 sm:py-16 md:py-20 lg:px-10" style={{ scrollMarginTop: '80px' }}>
+          <div className="mb-6 sm:mb-8 md:mb-10 flex flex-col gap-2 sm:gap-3 md:gap-4 text-center">
+            <p className="text-[0.6rem] sm:text-[0.65rem] md:text-xs font-semibold uppercase tracking-[0.28em] sm:tracking-[0.32em] text-emerald-200/80">Step-by-step clarity</p>
+            <h2 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-semibold text-white leading-tight">Workflows designed for real people.</h2>
+            <p className="mx-auto max-w-3xl text-sm sm:text-xs md:text-sm leading-relaxed text-slate-200/80 px-2 sm:px-0">
               Our AI-powered healthcare assistant combines multilingual support, real-time safety monitoring, and personalized guidance to deliver compassionate, clinically sound care recommendations.
             </p>
           </div>
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:gap-5 md:gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
             {workflows.map((workflow, index) => (
               <div
                 key={workflow.title}

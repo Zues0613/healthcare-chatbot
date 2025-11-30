@@ -20,7 +20,7 @@ export default function FeatureCard({ feature }: FeatureCardProps) {
 
   return (
     <article
-      className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-950/70 p-4 shadow-[0_30px_85px_rgba(15,23,42,0.55)] backdrop-blur-xl transition-all sm:rounded-3xl sm:p-5 md:rounded-[28px] md:p-6"
+      className="relative flex h-full flex-col overflow-hidden rounded-xl sm:rounded-2xl border border-white/10 bg-slate-950/70 p-3 sm:p-4 shadow-[0_30px_85px_rgba(15,23,42,0.55)] backdrop-blur-xl transition-all md:rounded-3xl md:p-5 lg:rounded-[28px] lg:p-6"
     >
       <div
         className={clsx(
@@ -32,18 +32,18 @@ export default function FeatureCard({ feature }: FeatureCardProps) {
       />
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="text-left w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+        className="text-left w-full min-h-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
         aria-expanded={isExpanded}
         aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${feature.title} details`}
       >
-        <div className="flex items-start justify-between gap-3">
-          <h3 className="text-lg font-semibold text-white sm:text-xl flex-1">{feature.title}</h3>
+        <div className="flex items-start justify-between gap-2 sm:gap-3">
+          <h3 className="text-base sm:text-lg md:text-xl font-semibold text-white flex-1 leading-tight">{feature.title}</h3>
           {feature.points.length > 0 && (
-            <div className="flex-shrink-0 mt-1">
+            <div className="flex-shrink-0 mt-0.5 sm:mt-1">
               {isExpanded ? (
-                <ChevronUp className="h-5 w-5 text-emerald-400" aria-hidden />
+                <ChevronUp className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-400" aria-hidden />
               ) : (
-                <ChevronDown className="h-5 w-5 text-emerald-400" aria-hidden />
+                <ChevronDown className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-400" aria-hidden />
               )}
             </div>
           )}

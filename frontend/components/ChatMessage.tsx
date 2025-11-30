@@ -460,7 +460,7 @@ function ChatMessage({ message, index, language = 'en', onFeedback }: ChatMessag
   return (
     <article
       className={clsx(
-        "flex w-full gap-3 sm:gap-4",
+        "flex w-full gap-2 sm:gap-3 md:gap-4 max-w-full overflow-x-hidden",
         alignment[message.role],
         message.role === "assistant" ? "animate-fadeUp" : ""
       )}
@@ -473,7 +473,7 @@ function ChatMessage({ message, index, language = 'en', onFeedback }: ChatMessag
         <div
           aria-hidden
           className={clsx(
-            "mt-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl text-xs font-semibold uppercase tracking-[0.3em]",
+            "mt-1 flex h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0 items-center justify-center rounded-xl sm:rounded-2xl text-[0.65rem] sm:text-xs font-semibold uppercase tracking-[0.28em] sm:tracking-[0.3em]",
             avatarStyles.assistant
           )}
         >
@@ -482,7 +482,7 @@ function ChatMessage({ message, index, language = 'en', onFeedback }: ChatMessag
       )}
       <div
         className={clsx(
-          "relative max-w-[90%] rounded-[26px] px-5 py-4 md:px-6 md:py-5 transition-all outline-none focus-visible:ring-4 focus-visible:ring-emerald-400/40",
+          "relative max-w-[85%] sm:max-w-[90%] rounded-xl sm:rounded-2xl md:rounded-[26px] px-3 py-3 sm:px-4 sm:py-4 md:px-5 md:py-4 lg:px-6 lg:py-5 transition-all outline-none focus-visible:ring-4 focus-visible:ring-emerald-400/40",
           roleStyles[message.role],
           message.role === "assistant"
             ? "[&::before]:pointer-events-none [&::before]:absolute [&::before]:inset-0 [&::before]:-mt-10 [&::before]:rounded-[32px] [&::before]:bg-gradient-to-br [&::before]:from-emerald-500/10 [&::before]:to-transparent [&::before]:opacity-0 [&::before]:transition-opacity hover:[&::before]:opacity-100"
@@ -490,21 +490,21 @@ function ChatMessage({ message, index, language = 'en', onFeedback }: ChatMessag
         )}
         tabIndex={0}
       >
-        <header className="mb-4 flex items-center justify-between text-xs uppercase tracking-[0.32em]">
+        <header className="mb-2 sm:mb-3 md:mb-4 flex items-center justify-between text-[0.65rem] sm:text-xs uppercase tracking-[0.28em] sm:tracking-[0.32em] gap-2">
           <span
             className={clsx(
-              "flex items-center gap-2 font-semibold",
+              "flex items-center gap-1.5 sm:gap-2 font-semibold truncate min-w-0",
               message.role === "assistant" ? "text-emerald-200/80" : "text-white/80"
             )}
           >
             {message.role === "assistant" && (
-              <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-300" aria-hidden />
+              <span className="inline-flex h-1.5 w-1.5 sm:h-2 sm:w-2 animate-pulse rounded-full bg-emerald-300 flex-shrink-0" aria-hidden />
             )}
-            {avatarLabel[message.role]}
+            <span className="truncate">{avatarLabel[message.role]}</span>
           </span>
           <time
             className={clsx(
-              "font-medium",
+              "font-medium flex-shrink-0 text-[0.65rem] sm:text-xs",
               message.role === "assistant" ? "text-emerald-200/70" : "text-white/70"
             )}
             dateTime={message.timestamp}
@@ -516,10 +516,10 @@ function ChatMessage({ message, index, language = 'en', onFeedback }: ChatMessag
         <div
           ref={contentRef}
           className={clsx(
-            "prose prose-sm md:prose-base max-w-none break-words leading-relaxed",
+            "prose prose-sm sm:prose-base md:prose-lg max-w-none break-words leading-relaxed text-sm sm:text-base",
             message.role === "user"
-              ? "prose-invert text-white [&_a]:text-emerald-200"
-              : "prose-invert text-slate-100 [&_code]:rounded [&_code]:bg-white/10 [&_code]:px-1.5 [&_code]:py-0.5 [&_a]:text-emerald-200 [&_a:hover]:text-emerald-100"
+              ? "prose-invert text-white [&_a]:text-emerald-200 [&_p]:text-sm sm:[&_p]:text-base"
+              : "prose-invert text-slate-100 [&_code]:rounded [&_code]:bg-white/10 [&_code]:px-1.5 [&_code]:py-0.5 [&_a]:text-emerald-200 [&_a:hover]:text-emerald-100 [&_p]:text-sm sm:[&_p]:text-base"
           )}
         >
           <ReactMarkdown
@@ -532,25 +532,25 @@ function ChatMessage({ message, index, language = 'en', onFeedback }: ChatMessag
         </div>
 
         {message.citations && Array.isArray(message.citations) && message.citations.length > 0 && (
-          <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 text-sm text-slate-100 shadow-[0_18px_45px_rgba(15,23,42,0.55)]">
+          <div className="mt-3 sm:mt-4 rounded-xl sm:rounded-2xl border border-white/10 bg-slate-950/60 text-sm text-slate-100 shadow-[0_18px_45px_rgba(15,23,42,0.55)]">
             <button
               type="button"
               onClick={() => setSourcesExpanded(!sourcesExpanded)}
-              className="w-full flex items-center justify-between p-4 text-left transition hover:bg-slate-900/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 rounded-t-2xl"
+              className="w-full flex items-center justify-between p-3 sm:p-4 text-left transition hover:bg-slate-900/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 rounded-t-xl sm:rounded-t-2xl min-h-[44px]"
               aria-expanded={sourcesExpanded}
               aria-controls={`sources-content-${index}`}
             >
-              <p className="text-xs font-semibold uppercase tracking-[0.32em] text-emerald-200/80">
+              <p className="text-[0.65rem] sm:text-xs font-semibold uppercase tracking-[0.28em] sm:tracking-[0.32em] text-emerald-200/80">
                 Sources ({message.citations.length})
               </p>
               {sourcesExpanded ? (
-                <ChevronUp className="h-4 w-4 text-emerald-200/80" aria-hidden />
+                <ChevronUp className="h-4 w-4 text-emerald-200/80 flex-shrink-0" aria-hidden />
               ) : (
-                <ChevronDown className="h-4 w-4 text-emerald-200/80" aria-hidden />
+                <ChevronDown className="h-4 w-4 text-emerald-200/80 flex-shrink-0" aria-hidden />
               )}
             </button>
             {sourcesExpanded && (
-              <div id={`sources-content-${index}`} className="px-4 pb-4 space-y-3">
+              <div id={`sources-content-${index}`} className="px-3 sm:px-4 pb-3 sm:pb-4 space-y-2 sm:space-y-3">
                 {message.citations.map((citation, idx) => {
                   const key = citation.id ?? `citation-${idx}`;
                   const headline = citation.topic ?? citation.source ?? `Reference ${idx + 1}`;
@@ -568,40 +568,41 @@ function ChatMessage({ message, index, language = 'en', onFeedback }: ChatMessag
                   return (
                     <div
                       key={key}
-                      className="rounded-xl border border-white/10 bg-slate-900/70 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.45)]"
+                      className="rounded-lg sm:rounded-xl border border-white/10 bg-slate-900/70 p-3 sm:p-4 shadow-[0_12px_30px_rgba(15,23,42,0.45)]"
                     >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="space-y-1">
-                          <p className="font-semibold text-slate-100">{headline}</p>
+                      <div className="flex flex-col gap-2 sm:gap-3">
+                        <div className="space-y-1 min-w-0">
+                          <p className="font-semibold text-sm sm:text-base text-slate-100 break-words">{headline}</p>
                           {supporting.length > 0 && (
-                            <p className="text-xs text-slate-400">{supporting.join(' • ')}</p>
+                            <p className="text-xs text-slate-400 break-words">{supporting.join(' • ')}</p>
                           )}
                           {citation.url && !supporting.includes(citation.url) && (
-                            <p className="text-xs text-slate-500">{citation.url}</p>
+                            <p className="text-xs text-slate-500 break-all">{citation.url}</p>
                           )}
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
                             onClick={() => handleCopyCitation(citation, idx)}
-                            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-950/70 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-emerald-300/60 hover:text-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+                            className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-white/10 bg-slate-950/70 px-2.5 sm:px-3 py-2 min-h-[44px] text-xs font-semibold text-slate-100 transition hover:border-emerald-300/60 hover:text-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
                           >
                             {copiedCitationKey === key ? (
-                              <Check className="h-4 w-4" aria-hidden />
+                              <Check className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" aria-hidden />
                             ) : (
-                              <Copy className="h-4 w-4" aria-hidden />
+                              <Copy className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" aria-hidden />
                             )}
-                            {copiedCitationKey === key ? 'Copied' : 'Copy notes'}
+                            <span className="hidden xs:inline">{copiedCitationKey === key ? 'Copied' : 'Copy notes'}</span>
+                            <span className="xs:hidden">{copiedCitationKey === key ? '✓' : 'Copy'}</span>
                           </button>
                           {citation.url && (
                             <a
                               href={citation.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-2 rounded-full border border-transparent bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 px-3 py-1.5 text-xs font-semibold text-white shadow-[0_10px_30px_rgba(16,185,129,0.35)] transition hover:scale-[1.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+                              className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-transparent bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 px-2.5 sm:px-3 py-2 min-h-[44px] text-xs font-semibold text-white shadow-[0_10px_30px_rgba(16,185,129,0.35)] transition hover:scale-[1.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
                             >
-                              <ExternalLink className="h-4 w-4" aria-hidden />
-                              Open
+                              <ExternalLink className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" aria-hidden />
+                              <span>Open</span>
                             </a>
                           )}
                         </div>
@@ -616,52 +617,52 @@ function ChatMessage({ message, index, language = 'en', onFeedback }: ChatMessag
 
         {/* Action buttons for assistant messages - below sources section */}
         {message.role === "assistant" && (
-          <div className="mt-4 flex items-center gap-2 flex-wrap">
+          <div className="mt-3 sm:mt-4 flex items-center gap-1.5 sm:gap-2 flex-wrap">
             {/* Narration controls */}
             {typeof window !== 'undefined' && 'speechSynthesis' in window && (
-              <div className="flex items-center gap-1 rounded-full border border-white/10 bg-slate-950/60 p-1">
+              <div className="flex items-center gap-0.5 sm:gap-1 rounded-full border border-white/10 bg-slate-950/60 p-0.5 sm:p-1">
                 {narrationState === 'playing' ? (
                   <button
                     type="button"
                     onClick={handleNarrationPause}
-                    className="p-1.5 rounded-full hover:bg-slate-900/70 transition text-emerald-200 hover:text-emerald-100"
+                    className="p-2 sm:p-1.5 rounded-full hover:bg-slate-900/70 transition text-emerald-200 hover:text-emerald-100 min-h-[44px] min-w-[44px] flex items-center justify-center"
                     title="Pause narration"
                     aria-label="Pause narration"
                   >
-                    <Pause className="h-4 w-4" />
+                    <Pause className="h-4 w-4 sm:h-4 sm:w-4" />
                   </button>
                 ) : (
                   <button
                     type="button"
                     onClick={handleNarrationPlay}
-                    className="p-1.5 rounded-full hover:bg-slate-900/70 transition text-emerald-200 hover:text-emerald-100"
+                    className="p-2 sm:p-1.5 rounded-full hover:bg-slate-900/70 transition text-emerald-200 hover:text-emerald-100 min-h-[44px] min-w-[44px] flex items-center justify-center"
                     title="Play narration"
                     aria-label="Play narration"
                   >
-                    <Play className="h-4 w-4" />
+                    <Play className="h-4 w-4 sm:h-4 sm:w-4" />
                   </button>
                 )}
                 {narrationState !== 'idle' && (
                   <button
                     type="button"
                     onClick={handleNarrationStop}
-                    className="p-1.5 rounded-full hover:bg-slate-900/70 transition text-emerald-200 hover:text-emerald-100"
+                    className="p-2 sm:p-1.5 rounded-full hover:bg-slate-900/70 transition text-emerald-200 hover:text-emerald-100 min-h-[44px] min-w-[44px] flex items-center justify-center"
                     title="Stop narration"
                     aria-label="Stop narration"
                   >
-                    <Square className="h-4 w-4" />
+                    <Square className="h-4 w-4 sm:h-4 sm:w-4" />
                   </button>
                 )}
               </div>
             )}
 
             {/* Feedback buttons */}
-            <div className="flex items-center gap-1 rounded-full border border-white/10 bg-slate-950/60 p-1">
+            <div className="flex items-center gap-0.5 sm:gap-1 rounded-full border border-white/10 bg-slate-950/60 p-0.5 sm:p-1">
               <button
                 type="button"
                 onClick={() => handleFeedback('positive')}
                 className={clsx(
-                  "p-1.5 rounded-full transition",
+                  "p-2 sm:p-1.5 rounded-full transition min-h-[44px] min-w-[44px] flex items-center justify-center",
                   feedbackGiven === 'positive'
                     ? "bg-emerald-500/20 text-emerald-300"
                     : "hover:bg-slate-900/70 text-slate-300 hover:text-emerald-200"
@@ -669,13 +670,13 @@ function ChatMessage({ message, index, language = 'en', onFeedback }: ChatMessag
                 title="Helpful"
                 aria-label="Mark as helpful"
               >
-                <ThumbsUp className="h-4 w-4" />
+                <ThumbsUp className="h-4 w-4 sm:h-4 sm:w-4" />
               </button>
               <button
                 type="button"
                 onClick={() => handleFeedback('negative')}
                 className={clsx(
-                  "p-1.5 rounded-full transition",
+                  "p-2 sm:p-1.5 rounded-full transition min-h-[44px] min-w-[44px] flex items-center justify-center",
                   feedbackGiven === 'negative'
                     ? "bg-red-500/20 text-red-300"
                     : "hover:bg-slate-900/70 text-slate-300 hover:text-red-200"
@@ -683,7 +684,7 @@ function ChatMessage({ message, index, language = 'en', onFeedback }: ChatMessag
                 title="Not helpful"
                 aria-label="Mark as not helpful"
               >
-                <ThumbsDown className="h-4 w-4" />
+                <ThumbsDown className="h-4 w-4 sm:h-4 sm:w-4" />
               </button>
             </div>
 
@@ -692,7 +693,7 @@ function ChatMessage({ message, index, language = 'en', onFeedback }: ChatMessag
               type="button"
               onClick={handleCopyRendered}
               className={clsx(
-                "p-1.5 rounded-full border border-white/10 bg-slate-950/60 transition",
+                "p-2 sm:p-1.5 rounded-full border border-white/10 bg-slate-950/60 transition min-h-[44px] min-w-[44px] flex items-center justify-center",
                 copied
                   ? "bg-emerald-500/20 text-emerald-300"
                   : "hover:bg-slate-900/70 text-slate-300 hover:text-emerald-200"
@@ -700,7 +701,7 @@ function ChatMessage({ message, index, language = 'en', onFeedback }: ChatMessag
               title="Copy response"
               aria-label="Copy response"
             >
-              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              {copied ? <Check className="h-4 w-4 sm:h-4 sm:w-4" /> : <Copy className="h-4 w-4 sm:h-4 sm:w-4" />}
             </button>
           </div>
         )}
@@ -709,7 +710,7 @@ function ChatMessage({ message, index, language = 'en', onFeedback }: ChatMessag
         <div
           aria-hidden
           className={clsx(
-            "mt-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl text-xs font-semibold uppercase tracking-[0.3em]",
+            "mt-1 flex h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0 items-center justify-center rounded-xl sm:rounded-2xl text-[0.65rem] sm:text-xs font-semibold uppercase tracking-[0.28em] sm:tracking-[0.3em]",
             avatarStyles.user
           )}
         >

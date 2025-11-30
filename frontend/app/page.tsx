@@ -1107,9 +1107,12 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
   const sidebarClasses = useMemo(
     () =>
       clsx(
-        // Unify mobile and desktop sidebar width/feel to match laptop layout
-        'fixed inset-y-0 left-0 z-40 flex w-72 flex-col gap-4 border-r border-white/10 bg-slate-900/60 px-4 py-6 shadow-[0_0_60px_rgba(16,185,129,0.18)] transition-transform duration-300 backdrop-blur-xl sm:w-72 sm:px-6 sm:py-8 md:gap-6 lg:z-30 lg:bg-slate-900/50 lg:shadow-none',
-        isSidebarOpen ? 'translate-x-0 lg:translate-x-0' : '-translate-x-full lg:-translate-x-full'
+        // Mobile-first: Full width on mobile, fixed width on desktop
+        'fixed inset-y-0 left-0 z-40 flex w-full flex-col gap-3 border-r border-white/10 bg-slate-900/95 px-3 py-4 shadow-[0_0_60px_rgba(16,185,129,0.18)] transition-transform duration-300 backdrop-blur-xl',
+        'sm:w-72 sm:px-4 sm:py-6 sm:gap-4',
+        'md:gap-6 md:px-6',
+        'lg:z-30 lg:bg-slate-900/50 lg:shadow-none lg:w-72',
+        isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
       ),
     [isSidebarOpen]
   );
@@ -1118,6 +1121,7 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
     () =>
       clsx(
         'flex min-h-screen flex-col transition-[margin] duration-300',
+        'w-full overflow-x-hidden', // Prevent horizontal scroll
         isSidebarOpen ? 'lg:ml-72' : 'lg:ml-16',
         'px-0 sm:px-0'
       ),
@@ -1127,8 +1131,12 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
   const bottomBarClasses = useMemo(
     () =>
       clsx(
-        'fixed bottom-0 left-0 right-0 z-40 px-4 pb-6 pt-3 sm:px-6 lg:px-10 transition-[left] duration-300',
-        isSidebarOpen ? 'lg:left-72' : 'lg:left-16'
+        'fixed bottom-0 left-0 right-0 z-40 px-3 pb-4 pt-2.5',
+        'sm:px-4 sm:pb-5 sm:pt-3',
+        'lg:px-10 lg:pb-6 lg:pt-3',
+        'transition-[left] duration-300 w-full max-w-full overflow-x-hidden',
+        // Hide on mobile when sidebar is open, always show on desktop
+        isSidebarOpen ? 'hidden lg:block lg:left-72' : 'block lg:left-16'
       ),
     [isSidebarOpen]
   );
@@ -1320,25 +1328,25 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
         id="primary-navigation"
         data-overlay={isSidebarOpen && !isDesktop}
       >
-        <div className="flex items-center gap-2 pt-14 sm:pt-0 sm:flex">
-          <span className="rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 p-2 text-white shadow-[0_0_25px_rgba(16,185,129,0.45)]">
-            <Sparkle className="h-5 w-5" aria-hidden />
+        <div className="flex items-center gap-2 pt-12 sm:pt-0 sm:flex">
+          <span className="flex-shrink-0 rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 p-1.5 text-white shadow-[0_0_25px_rgba(16,185,129,0.45)] sm:p-2">
+            <Sparkle className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
           </span>
-          <div className="flex-1 min-w-0">
-            <p className="mt-1 sm:mt-0 text-[0.65rem] sm:text-xs font-semibold uppercase tracking-[0.32em] text-emerald-300/80 whitespace-normal break-words leading-tight">
+          <div className="flex-1 min-w-0 overflow-hidden">
+            <p className="mt-0.5 sm:mt-0 text-[0.6rem] sm:text-xs font-semibold uppercase tracking-[0.28em] sm:tracking-[0.32em] text-emerald-300/80 whitespace-normal break-words leading-tight">
               Wellness mode
             </p>
-            <p className="text-sm sm:text-base font-semibold text-white whitespace-normal break-words leading-tight">
+            <p className="text-xs sm:text-sm md:text-base font-semibold text-white whitespace-normal break-words leading-tight truncate">
               Care Console
             </p>
           </div>
           <button
             type="button"
             onClick={() => setIsSidebarOpen(false)}
-            className="flex-shrink-0 rounded-full border border-white/20 p-1.5 text-slate-400 transition hover:border-white/40 hover:bg-slate-800/50 hover:text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+            className="flex-shrink-0 rounded-full border border-white/20 p-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-400 transition hover:border-white/40 hover:bg-slate-800/50 hover:text-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
             aria-label="Close sidebar"
           >
-            <X className="h-4 w-4" aria-hidden />
+            <X className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
           </button>
         </div>
 
@@ -1349,25 +1357,25 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
               onClick={() => {
                 router.push('/');
               }}
-              className="flex w-full items-center gap-3 rounded-lg border border-white/10 bg-slate-800/50 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-emerald-400/50 hover:bg-slate-800/70 hover:text-white mb-1"
+              className="flex w-full items-center gap-2.5 rounded-lg border border-white/10 bg-slate-800/50 px-3 py-3 min-h-[44px] text-xs sm:text-sm font-medium text-slate-200 transition hover:border-emerald-400/50 hover:bg-slate-800/70 hover:text-white mb-2 sm:mb-1"
             >
-              <Plus className="h-4 w-4" />
-              <span>New chat</span>
+              <Plus className="h-4 w-4 flex-shrink-0" />
+              <span className="truncate">New chat</span>
             </button>
 
             <button
               type="button"
               onClick={() => setShowSearchChats(true)}
-              className="flex w-full items-center gap-3 rounded-lg border border-white/10 bg-slate-800/50 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-emerald-400/50 hover:bg-slate-800/70 hover:text-white mb-5"
+              className="flex w-full items-center gap-2.5 rounded-lg border border-white/10 bg-slate-800/50 px-3 py-3 min-h-[44px] text-xs sm:text-sm font-medium text-slate-200 transition hover:border-emerald-400/50 hover:bg-slate-800/70 hover:text-white mb-4 sm:mb-5"
             >
-              <Search className="h-4 w-4" />
-              <span>Search chats</span>
+              <Search className="h-4 w-4 flex-shrink-0" />
+              <span className="truncate">Search chats</span>
             </button>
           </div>
 
           <div className="flex-1 flex flex-col min-h-0 pt-2">
-            <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 flex-shrink-0">Chats</p>
-            <div className="overflow-y-auto overflow-x-hidden space-y-1 max-h-[320px] scrollbar-hide">
+            <p className="mb-2 px-2 sm:px-3 text-[0.65rem] sm:text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 flex-shrink-0">Chats</p>
+            <div className="overflow-y-auto overflow-x-hidden space-y-1 max-h-[280px] sm:max-h-[320px] scrollbar-hide px-1 sm:px-0">
               {sessionsLoading ? (
                 <div className="px-3">
                   <LoadingSkeleton variant="chatHistory" count={3} />
@@ -1416,7 +1424,7 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                         type="button"
                         onClick={() => handleSelectSession(session.id)}
                         className={clsx(
-                          'flex-1 rounded-lg px-3 py-2 text-left text-sm transition overflow-hidden',
+                          'flex-1 rounded-lg px-2.5 sm:px-3 py-2.5 min-h-[44px] text-left text-xs sm:text-sm transition overflow-hidden',
                           isActive
                             ? 'text-emerald-200'
                             : 'text-slate-300 hover:text-white'
@@ -1424,14 +1432,14 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                       >
                         <div className="flex items-start justify-between gap-2 w-full">
                           <div className="flex-1 min-w-0 overflow-hidden">
-                            <p className="text-xs text-slate-400 mb-1 truncate">
+                            <p className="text-[0.65rem] sm:text-xs text-slate-400 mb-1 truncate">
                               {formatDate(session.lastActivityAt || session.createdAt)}
                             </p>
-                            <p className="font-medium truncate text-sm">
+                            <p className="font-medium truncate text-xs sm:text-sm leading-tight">
                               {sessionTitle}
                             </p>
                             {session.language && (
-                              <p className="text-xs text-emerald-400/70 mt-1 truncate">
+                              <p className="text-[0.65rem] sm:text-xs text-emerald-400/70 mt-1 truncate">
                                 {session.language.toUpperCase()}
                               </p>
                             )}
@@ -1445,7 +1453,7 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                           handleDeleteSession(session.id);
                         }}
                         className={clsx(
-                          'flex-shrink-0 rounded-lg p-2 transition opacity-0 group-hover:opacity-100',
+                          'flex-shrink-0 rounded-lg p-2 min-h-[44px] min-w-[44px] flex items-center justify-center transition opacity-0 group-hover:opacity-100',
                           'text-slate-400 hover:text-red-400 hover:bg-red-500/10',
                           isActive && 'opacity-100'
                         )}
@@ -1467,16 +1475,16 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
           )}
         </div>
 
-        <div className="flex-shrink-0 mt-auto border-t border-white/10 pt-4 pb-36 sm:pb-0">
-          <div className="flex items-center gap-3 px-3 py-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 text-xs font-semibold text-white">
-              <User className="h-4 w-4" />
+        <div className="flex-shrink-0 mt-auto border-t border-white/10 pt-3 sm:pt-4 pb-4 sm:pb-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 px-2 sm:px-3 py-2">
+            <div className="flex h-8 w-8 sm:h-9 sm:w-9 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500 text-xs font-semibold text-white">
+              <User className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-white">
+            <div className="flex-1 min-w-0 overflow-hidden">
+              <p className="text-xs sm:text-sm font-medium text-white truncate">
                 {userDisplayName}
               </p>
-              <p className="text-xs text-slate-400">Free</p>
+              <p className="text-[0.65rem] sm:text-xs text-slate-400">Free</p>
             </div>
           </div>
           <button
@@ -1494,10 +1502,10 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                 router.push('/landing');
               }
             }}
-            className="mt-2 flex w-full items-center gap-3 rounded-lg border border-white/10 bg-slate-800/50 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-red-400/50 hover:bg-slate-800/70 hover:text-red-200"
+            className="mt-2 flex w-full items-center gap-2.5 sm:gap-3 rounded-lg border border-white/10 bg-slate-800/50 px-3 py-3 min-h-[44px] text-xs sm:text-sm font-medium text-slate-200 transition hover:border-red-400/50 hover:bg-slate-800/70 hover:text-red-200"
           >
-            <LogOut className="h-4 w-4" />
-            <span>Logout</span>
+            <LogOut className="h-4 w-4 flex-shrink-0" />
+            <span className="truncate">Logout</span>
           </button>
         </div>
       </aside>
@@ -1530,47 +1538,51 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
 
       <div className={mainLayoutClasses}>
         <header className={clsx(
-          "fixed top-0 z-[100] flex items-center justify-between border-b border-white/10 bg-slate-900/95 backdrop-blur-xl px-3 py-3 shadow-[0_25px_60px_rgba(15,23,42,0.75)] transition-[left] duration-300 sm:px-4 sm:py-4 md:px-6 lg:px-10",
+          "fixed top-0 z-[100] flex items-center justify-between border-b border-white/10 bg-slate-900/95 backdrop-blur-xl px-2.5 py-2.5 shadow-[0_25px_60px_rgba(15,23,42,0.75)] transition-[left] duration-300",
+          "sm:px-3 sm:py-3",
+          "md:px-4 md:py-4",
+          "lg:px-6",
+          "xl:px-10",
           isSidebarOpen ? 'lg:left-72' : 'lg:left-16',
-          'left-0 right-0 lg:right-0'
+          'left-0 right-0 lg:right-0 w-full max-w-full overflow-x-hidden'
         )}>
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 min-w-0 flex-1">
           <button
                 type="button"
               onClick={() => setIsSidebarOpen(true)}
               aria-expanded={isSidebarOpen}
               aria-controls="primary-navigation"
-              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-900/70 px-2.5 py-1.5 text-xs font-semibold text-slate-200 shadow-[0_0_25px_rgba(16,185,129,0.18)] transition hover:border-emerald-400/70 hover:text-emerald-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 sm:gap-2 sm:px-3 sm:py-2 sm:text-sm lg:hidden"
+              className="inline-flex items-center justify-center gap-1 rounded-full border border-white/10 bg-slate-900/70 px-2 py-2 min-h-[44px] min-w-[44px] text-xs font-semibold text-slate-200 shadow-[0_0_25px_rgba(16,185,129,0.18)] transition hover:border-emerald-400/70 hover:text-emerald-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 sm:gap-1.5 sm:px-2.5 sm:py-2 sm:text-sm lg:hidden"
             >
-              <Menu className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
-              <span className="hidden xs:inline">Menu</span>
+              <Menu className="h-4 w-4 sm:h-4 sm:w-4 flex-shrink-0" aria-hidden />
+              <span className="hidden xs:inline text-xs">Menu</span>
           </button>
-              <div>
-              <p className="hidden text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-300/75 sm:block sm:text-xs">Live care session</p>
-              <h1 className="text-base font-semibold text-white sm:text-lg md:text-xl">
+              <div className="min-w-0 flex-1">
+              <p className="hidden text-[0.6rem] font-semibold uppercase tracking-[0.28em] text-emerald-300/75 sm:block sm:text-xs sm:tracking-[0.32em]">Live care session</p>
+              <h1 className="text-sm sm:text-base md:text-lg lg:text-xl font-semibold text-white truncate">
                 <span className="sm:hidden">WellNess AI</span>
                 <span className="hidden sm:inline">WellNess Health Companion</span>
               </h1>
             </div>
               </div>
-              <div className="flex flex-col items-end gap-1.5 sm:flex-row sm:items-center sm:gap-2 md:gap-3">
-                <div className="flex items-center gap-2 sm:gap-3">
+              <div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-1.5 md:gap-2 lg:gap-3 flex-shrink-0">
+                <div className="flex items-center gap-1 sm:gap-1.5 md:gap-2 lg:gap-3 flex-wrap justify-end">
                   <button
                     type="button"
                     onClick={() => setShowPreferences(true)}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-900/70 px-2 py-1.5 text-[0.65rem] font-semibold text-slate-100 shadow-[0_0_25px_rgba(16,185,129,0.18)] transition hover:border-emerald-400/70 hover:text-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 sm:gap-2 sm:px-3 sm:py-2 sm:text-xs"
+                    className="inline-flex items-center justify-center gap-1 rounded-full border border-white/10 bg-slate-900/70 px-2 py-2 min-h-[44px] text-[0.65rem] font-semibold text-slate-100 shadow-[0_0_25px_rgba(16,185,129,0.18)] transition hover:border-emerald-400/70 hover:text-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 sm:gap-1.5 sm:px-2.5 sm:py-2 sm:text-xs"
                     title="Session preferences"
                   >
-                    <Settings className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
+                    <Settings className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" aria-hidden />
                     <span className="hidden sm:inline">Preferences</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowSafety(true)}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-900/70 px-2 py-1.5 text-[0.65rem] font-semibold text-slate-100 shadow-[0_0_25px_rgba(34,197,94,0.18)] transition hover:border-green-400/70 hover:text-green-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-300 sm:gap-2 sm:px-3 sm:py-2 sm:text-xs"
+                    className="inline-flex items-center justify-center gap-1 rounded-full border border-white/10 bg-slate-900/70 px-2 py-2 min-h-[44px] text-[0.65rem] font-semibold text-slate-100 shadow-[0_0_25px_rgba(34,197,94,0.18)] transition hover:border-green-400/70 hover:text-green-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-300 sm:gap-1.5 sm:px-2.5 sm:py-2 sm:text-xs"
                     title="Safety guidance"
                   >
-                    <HeartPulse className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
+                    <HeartPulse className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" aria-hidden />
                     <span className="hidden sm:inline">Safety</span>
                   </button>
                   {/* Share button removed per request */}
@@ -1578,7 +1590,7 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                     type="button"
                     onClick={toggleNarration}
                     className={clsx(
-                      "inline-flex items-center gap-1.5 rounded-full border px-2 py-1.5 text-[0.65rem] font-semibold shadow-[0_0_25px_rgba(16,185,129,0.18)] transition sm:gap-2 sm:px-3 sm:py-2 sm:text-xs",
+                      "inline-flex items-center justify-center gap-1 rounded-full border px-2 py-2 min-h-[44px] text-[0.65rem] font-semibold shadow-[0_0_25px_rgba(16,185,129,0.18)] transition sm:gap-1.5 sm:px-2.5 sm:py-2 sm:text-xs",
                       narrationEnabled
                         ? "border-emerald-400/60 bg-slate-900/70 text-emerald-100 hover:border-emerald-300/80"
                         : "border-white/10 bg-slate-900/70 text-slate-100 hover:border-white/20"
@@ -1587,61 +1599,61 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                     aria-pressed={narrationEnabled}
                   >
                     {narrationEnabled ? (
-                      <Volume2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
+                      <Volume2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" aria-hidden />
                     ) : (
-                      <VolumeX className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
+                      <VolumeX className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" aria-hidden />
                     )}
                     <span className="hidden sm:inline">{narrationEnabled ? "Narration On" : "Narration Off"}</span>
                   </button>
                   <button
                     type="button"
                     onClick={stopNarration}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-900/70 px-2 py-1.5 text-[0.65rem] font-semibold text-slate-100 shadow-[0_0_25px_rgba(16,185,129,0.18)] transition hover:border-red-300/70 hover:text-red-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-300 sm:gap-2 sm:px-3 sm:py-2 sm:text-xs"
+                    className="inline-flex items-center justify-center gap-1 rounded-full border border-white/10 bg-slate-900/70 px-2 py-2 min-h-[44px] text-[0.65rem] font-semibold text-slate-100 shadow-[0_0_25px_rgba(16,185,129,0.18)] transition hover:border-red-300/70 hover:text-red-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-300 sm:gap-1.5 sm:px-2.5 sm:py-2 sm:text-xs"
                     title="Stop narration"
                   >
-                    <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden />
+                    <X className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" aria-hidden />
                     <span className="hidden sm:inline">Stop</span>
                   </button>
                   {/* Online status chip removed per request */}
                 </div>
                 {shareFeedback && (
-                  <p className="text-xs text-emerald-200/80" aria-live="polite">
+                  <p className="text-[0.65rem] sm:text-xs text-emerald-200/80 truncate max-w-[120px] sm:max-w-none" aria-live="polite">
                     {shareFeedback}
                   </p>
                 )}
               </div>
         </header>
 
-        <main className="flex-1 px-3 pb-28 pt-20 sm:px-4 sm:pb-32 sm:pt-24 md:px-6 md:pt-28 lg:px-10">
-          <div className="mx-auto flex h-full max-w-4xl flex-col gap-4 sm:gap-6">
+        <main className="flex-1 px-2.5 sm:px-3 md:px-4 lg:px-6 xl:px-10 pb-24 sm:pb-28 md:pb-32 pt-16 sm:pt-20 md:pt-24 lg:pt-28 w-full max-w-full overflow-x-hidden">
+          <div className="mx-auto flex h-full max-w-4xl flex-col gap-3 sm:gap-4 md:gap-6 w-full">
             {messages.length === 0 && !initialSessionId && !isLoading && !isLoadingSession && (
-              <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-5 shadow-[0_35px_90px_rgba(15,23,42,0.65)] backdrop-blur-xl sm:rounded-[30px] sm:px-5 sm:py-6 md:px-6 lg:px-8">
+              <section className="relative overflow-hidden rounded-xl sm:rounded-2xl border border-white/10 bg-slate-900/60 px-3 py-4 shadow-[0_35px_90px_rgba(15,23,42,0.65)] backdrop-blur-xl sm:px-4 sm:py-5 md:rounded-2xl md:px-5 md:py-6 lg:px-6 xl:px-8 w-full max-w-full">
                 <div
                   className="absolute inset-y-0 right-0 w-[55%] opacity-60 blur-3xl bg-gradient-to-br from-emerald-500 via-green-500 to-teal-500"
                   aria-hidden
                 />
-                <div className="relative flex flex-col gap-4 sm:gap-5">
-                  <div className="flex items-center gap-2 text-[0.65rem] font-semibold uppercase tracking-[0.32em] text-emerald-300/80 sm:gap-3 sm:text-xs">
-                    <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-400 sm:h-2 sm:w-2" aria-hidden />
-                    Ready when you are
+                <div className="relative flex flex-col gap-3 sm:gap-4 md:gap-5">
+                  <div className="flex items-center gap-1.5 sm:gap-2 text-[0.6rem] sm:text-[0.65rem] font-semibold uppercase tracking-[0.28em] sm:tracking-[0.32em] text-emerald-300/80">
+                    <span className="flex h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-emerald-400 flex-shrink-0" aria-hidden />
+                    <span>Ready when you are</span>
                   </div>
-                  <h2 className="text-2xl font-bold text-white sm:text-3xl md:text-4xl lg:text-5xl">
+                  <h2 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl xl:text-5xl font-bold text-white leading-tight">
                     How can I care for you today?
                   </h2>
-                  <p className="max-w-3xl text-xs leading-relaxed text-slate-200 sm:text-sm md:text-base">
+                  <p className="max-w-3xl text-sm sm:text-xs md:text-sm lg:text-base leading-relaxed text-slate-200">
                     Share what's on your mind—symptoms you're noticing, questions about self-care, or worries about emergencies. I'll
                     help you navigate next steps with calm, clinically aligned guidance.
                   </p>
-                  <div className="w-full max-w-4xl">
+                  <div className="w-full max-w-full">
                     <TopicSuggestions
                       onSuggestionSelect={(prompt) => {
                         void handleSend(prompt);
                       }}
                     />
                   </div>
-                  <div className="flex items-start gap-3 rounded-2xl border border-emerald-400/40 bg-gradient-to-r from-emerald-500/20 via-green-500/10 to-teal-500/20 px-4 py-3 text-emerald-100 shadow-[0_18px_45px_rgba(16,185,129,0.18)]">
-                    <span className="mt-1 flex h-3 w-3 rounded-full bg-white/80" aria-hidden />
-                    <p className="text-xs leading-relaxed text-emerald-50 sm:text-sm">
+                  <div className="flex items-start gap-2 sm:gap-3 rounded-xl sm:rounded-2xl border border-emerald-400/40 bg-gradient-to-r from-emerald-500/20 via-green-500/10 to-teal-500/20 px-3 py-2.5 sm:px-4 sm:py-3 text-emerald-100 shadow-[0_18px_45px_rgba(16,185,129,0.18)]">
+                    <span className="mt-0.5 sm:mt-1 flex h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full bg-white/80 flex-shrink-0" aria-hidden />
+                    <p className="text-xs sm:text-sm leading-relaxed text-emerald-50">
                       I'm a virtual companion for everyday care—not a substitute for emergency services or licensed clinicians. If you
                       feel unsafe or notice severe symptoms, please seek urgent medical attention immediately.
                     </p>
@@ -1857,7 +1869,7 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
 
         <div className={bottomBarClasses} style={{ pointerEvents: 'none' }}>
           <form
-            className="mx-auto flex w-full max-w-4xl flex-wrap items-center gap-2.5 rounded-2xl border border-white/10 bg-slate-900/70 px-3 py-3 shadow-[0_28px_80px_rgba(16,185,129,0.25)] backdrop-blur-xl sm:flex-nowrap sm:gap-4 sm:rounded-[32px] sm:px-4 sm:py-4 md:px-6"
+            className="mx-auto flex w-full max-w-4xl flex-wrap items-end gap-2 rounded-xl sm:rounded-2xl border border-white/10 bg-slate-900/70 px-2.5 py-2.5 shadow-[0_28px_80px_rgba(16,185,129,0.25)] backdrop-blur-xl sm:flex-nowrap sm:gap-3 sm:rounded-[32px] sm:px-3 sm:py-3 md:px-4 md:py-4 lg:px-6 max-w-full overflow-x-hidden"
             style={{ pointerEvents: 'auto' }}
             onSubmit={(event) => {
               event.preventDefault();
@@ -1879,7 +1891,7 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                 }}
                 placeholder={selectedPlaceholder}
                 rows={2}
-                className="min-h-[60px] w-full resize-none rounded-xl border border-white/10 bg-transparent px-3 py-2 text-xs leading-relaxed text-slate-100 shadow-inner shadow-black/20 transition placeholder:text-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400/80 sm:min-h-[80px] sm:rounded-2xl sm:px-4 sm:py-3 sm:text-sm sm:rows-3"
+                className="min-h-[56px] w-full resize-none rounded-xl border border-white/10 bg-transparent px-3 py-2.5 text-sm leading-relaxed text-slate-100 shadow-inner shadow-black/20 transition placeholder:text-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400/80 sm:min-h-[64px] sm:rounded-2xl sm:px-4 sm:py-3 sm:text-base sm:rows-3"
                 aria-label="Write your question"
                 disabled={isLoading}
               />
@@ -1890,19 +1902,19 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
 
             <button
               type="submit"
-              className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-transparent bg-gradient-to-br from-green-500 via-emerald-500 to-teal-500 text-white shadow-[0_18px_45px_rgba(16,185,129,0.35)] transition hover:scale-[1.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 sm:h-14 sm:w-14"
+              className="flex h-12 w-12 sm:h-14 sm:w-14 flex-shrink-0 items-center justify-center rounded-full border border-transparent bg-gradient-to-br from-green-500 via-emerald-500 to-teal-500 text-white shadow-[0_18px_45px_rgba(16,185,129,0.35)] transition hover:scale-[1.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 min-h-[48px] min-w-[48px]"
               disabled={isLoading}
               aria-label="Send message"
             >
-              <SendHorizonal className={clsx('h-4 w-4 sm:h-5 sm:w-5', isLoading ? 'animate-pulse' : '')} aria-hidden />
+              <SendHorizonal className={clsx('h-5 w-5 sm:h-5 sm:w-5', isLoading ? 'animate-pulse' : '')} aria-hidden />
             </button>
           </form>
         </div>
 
       {showPreferences && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 py-8 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-3 sm:px-4 py-4 sm:py-8 backdrop-blur-sm overflow-y-auto">
           <section
-            className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-white/10 bg-slate-900/70 p-8 shadow-[0_35px_90px_rgba(15,23,42,0.65)] backdrop-blur-xl"
+            className="relative w-full max-w-2xl overflow-hidden rounded-2xl sm:rounded-3xl border border-white/10 bg-slate-900/70 p-4 sm:p-6 md:p-8 shadow-[0_35px_90px_rgba(15,23,42,0.65)] backdrop-blur-xl my-auto max-h-[90vh] overflow-y-auto"
             role="dialog"
             aria-modal="true"
             aria-label="Session preferences"
@@ -1970,9 +1982,9 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
       )}
 
       {showSafety && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 py-8 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-3 sm:px-4 py-4 sm:py-8 backdrop-blur-sm overflow-y-auto">
           <section
-            className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-white/10 bg-slate-900/70 p-8 shadow-[0_35px_90px_rgba(15,23,42,0.65)] backdrop-blur-xl"
+            className="relative w-full max-w-xl overflow-hidden rounded-2xl sm:rounded-3xl border border-white/10 bg-slate-900/70 p-4 sm:p-6 md:p-8 shadow-[0_35px_90px_rgba(15,23,42,0.65)] backdrop-blur-xl my-auto max-h-[90vh] overflow-y-auto"
             role="dialog"
             aria-modal="true"
             aria-label="Safety guidance"
@@ -2027,8 +2039,8 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
       )}
 
       {showProfile && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 py-8 backdrop-blur-sm">
-          <div className="relative w-full max-w-lg overflow-hidden rounded-3xl border border-white/10 bg-slate-900/70 p-8 shadow-[0_35px_90px_rgba(15,23,42,0.65)] backdrop-blur-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-3 sm:px-4 py-4 sm:py-8 backdrop-blur-sm overflow-y-auto">
+          <div className="relative w-full max-w-lg overflow-hidden rounded-2xl sm:rounded-3xl border border-white/10 bg-slate-900/70 p-4 sm:p-6 md:p-8 shadow-[0_35px_90px_rgba(15,23,42,0.65)] backdrop-blur-xl my-auto max-h-[90vh] overflow-y-auto">
             <div
               className="absolute inset-0 -z-10 opacity-30 blur-3xl"
               style={{ background: 'radial-gradient(circle at 20% 20%, rgba(16,185,129,0.3), transparent 60%), radial-gradient(circle at 80% 20%, rgba(34,197,94,0.25), transparent 55%)' }}
@@ -2046,42 +2058,42 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
               Update basic details so I can tailor contextual guidance. Your information stays on this device.
             </p>
 
-            <div className="mt-6 space-y-4">
-              <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-200 shadow-[0_12px_30px_rgba(15,23,42,0.45)] transition hover:border-emerald-400/30 hover:shadow-[0_18px_45px_rgba(16,185,129,0.18)]">
+            <div className="mt-4 sm:mt-6 space-y-3 sm:space-y-4">
+              <label className="flex items-center gap-2.5 sm:gap-3 rounded-xl sm:rounded-2xl border border-white/10 bg-slate-950/60 px-3 sm:px-4 py-3 min-h-[44px] text-sm text-slate-200 shadow-[0_12px_30px_rgba(15,23,42,0.45)] transition hover:border-emerald-400/30 hover:shadow-[0_18px_45px_rgba(16,185,129,0.18)]">
                 <input
                   type="checkbox"
                   checked={profile.diabetes}
                   onChange={(event) => setProfile((prev) => ({ ...prev, diabetes: event.target.checked }))}
-                  className="h-5 w-5 rounded border-white/20 bg-slate-800 text-emerald-500 focus:ring-emerald-400/50"
+                  className="h-5 w-5 sm:h-5 sm:w-5 rounded border-white/20 bg-slate-800 text-emerald-500 focus:ring-emerald-400/50 flex-shrink-0"
                 />
-                I have diabetes
+                <span className="text-sm sm:text-base">I have diabetes</span>
               </label>
 
-              <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-200 shadow-[0_12px_30px_rgba(15,23,42,0.45)] transition hover:border-emerald-400/30 hover:shadow-[0_18px_45px_rgba(16,185,129,0.18)]">
+              <label className="flex items-center gap-2.5 sm:gap-3 rounded-xl sm:rounded-2xl border border-white/10 bg-slate-950/60 px-3 sm:px-4 py-3 min-h-[44px] text-sm text-slate-200 shadow-[0_12px_30px_rgba(15,23,42,0.45)] transition hover:border-emerald-400/30 hover:shadow-[0_18px_45px_rgba(16,185,129,0.18)]">
                 <input
                   type="checkbox"
                   checked={profile.hypertension}
                   onChange={(event) => setProfile((prev) => ({ ...prev, hypertension: event.target.checked }))}
-                  className="h-5 w-5 rounded border-white/20 bg-slate-800 text-emerald-500 focus:ring-emerald-400/50"
+                  className="h-5 w-5 sm:h-5 sm:w-5 rounded border-white/20 bg-slate-800 text-emerald-500 focus:ring-emerald-400/50 flex-shrink-0"
                 />
-                I have hypertension
+                <span className="text-sm sm:text-base">I have hypertension</span>
               </label>
 
               {(profile.sex === 'female' || profile.sex === undefined || profile.sex === 'other') && (
-                <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-200 shadow-[0_12px_30px_rgba(15,23,42,0.45)] transition hover:border-emerald-400/30 hover:shadow-[0_18px_45px_rgba(16,185,129,0.18)]">
-                <input
-                  type="checkbox"
-                    checked={profile.pregnancy}
-                    onChange={(event) => setProfile((prev) => ({ ...prev, pregnancy: event.target.checked }))}
-                    className="h-5 w-5 rounded border-white/20 bg-slate-800 text-emerald-500 focus:ring-emerald-400/50"
-                  />
-                  I am currently pregnant
+                <label className="flex items-center gap-2.5 sm:gap-3 rounded-xl sm:rounded-2xl border border-white/10 bg-slate-950/60 px-3 sm:px-4 py-3 min-h-[44px] text-sm text-slate-200 shadow-[0_12px_30px_rgba(15,23,42,0.45)] transition hover:border-emerald-400/30 hover:shadow-[0_18px_45px_rgba(16,185,129,0.18)]">
+                  <input
+                    type="checkbox"
+                      checked={profile.pregnancy}
+                      onChange={(event) => setProfile((prev) => ({ ...prev, pregnancy: event.target.checked }))}
+                      className="h-5 w-5 sm:h-5 sm:w-5 rounded border-white/20 bg-slate-800 text-emerald-500 focus:ring-emerald-400/50 flex-shrink-0"
+                    />
+                  <span className="text-sm sm:text-base">I am currently pregnant</span>
                 </label>
               )}
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:gap-4 sm:grid-cols-2">
                 <label className="space-y-2 text-sm text-slate-300">
-                  <span className="block font-semibold text-emerald-300/80">Age (years)</span>
+                  <span className="block font-semibold text-emerald-300/80 text-xs sm:text-sm">Age (years)</span>
                   <input
                     type="number"
                     min={0}
@@ -2092,12 +2104,12 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                         age: event.target.value ? Number(event.target.value) : undefined,
                       }))
                     }
-                    className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-2 text-slate-100 shadow-inner shadow-black/20 focus:border-emerald-400/60 focus:outline-none focus:ring-4 focus:ring-emerald-500/20"
+                    className="w-full rounded-xl sm:rounded-2xl border border-white/10 bg-slate-950/60 px-3 sm:px-4 py-2.5 sm:py-2 min-h-[44px] text-sm sm:text-base text-slate-100 shadow-inner shadow-black/20 focus:border-emerald-400/60 focus:outline-none focus:ring-4 focus:ring-emerald-500/20"
                   />
               </label>
 
                 <label className="space-y-2 text-sm text-slate-300">
-                  <span className="block font-semibold text-emerald-300/80">Sex</span>
+                  <span className="block font-semibold text-emerald-300/80 text-xs sm:text-sm">Sex</span>
                   <select
                     value={profile.sex ?? ''}
                     onChange={(event) =>
@@ -2107,7 +2119,7 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
                         pregnancy: event.target.value === 'female' ? prev.pregnancy : false,
                       }))
                     }
-                    className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-2 text-slate-100 shadow-inner shadow-black/20 focus:border-emerald-400/60 focus:outline-none focus:ring-4 focus:ring-emerald-500/20"
+                    className="w-full rounded-xl sm:rounded-2xl border border-white/10 bg-slate-950/60 px-3 sm:px-4 py-2.5 sm:py-2 min-h-[44px] text-sm sm:text-base text-slate-100 shadow-inner shadow-black/20 focus:border-emerald-400/60 focus:outline-none focus:ring-4 focus:ring-emerald-500/20"
                   >
                     <option value="" className="bg-slate-900">Select</option>
                     <option value="male" className="bg-slate-900">Male</option>
@@ -2118,27 +2130,27 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
               </div>
 
               <label className="space-y-2 text-sm text-slate-300">
-                <span className="block font-semibold text-emerald-300/80">City (optional)</span>
+                <span className="block font-semibold text-emerald-300/80 text-xs sm:text-sm">City (optional)</span>
                 <input
                   type="text"
                   value={profile.city ?? ''}
                   onChange={(event) => setProfile((prev) => ({ ...prev, city: event.target.value }))}
                   placeholder="e.g., Mumbai"
-                  className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-2 text-slate-100 shadow-inner shadow-black/20 focus:border-emerald-400/60 focus:outline-none focus:ring-4 focus:ring-emerald-500/20"
+                  className="w-full rounded-xl sm:rounded-2xl border border-white/10 bg-slate-950/60 px-3 sm:px-4 py-2.5 sm:py-2 min-h-[44px] text-sm sm:text-base text-slate-100 shadow-inner shadow-black/20 focus:border-emerald-400/60 focus:outline-none focus:ring-4 focus:ring-emerald-500/20"
                 />
               </label>
             </div>
 
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row justify-end gap-2.5 sm:gap-3">
               <button
                 onClick={() => setShowProfile(false)}
-                className="rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-white/20 hover:bg-slate-900/80 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
+                className="w-full sm:w-auto rounded-xl sm:rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 min-h-[44px] text-sm font-semibold text-slate-300 transition hover:border-white/20 hover:bg-slate-900/80 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
               >
                 Cancel
               </button>
             <button
               onClick={() => setShowProfile(false)}
-                className="rounded-2xl bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(16,185,129,0.35)] transition hover:scale-[1.02] hover:shadow-[0_15px_40px_rgba(16,185,129,0.45)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                className="w-full sm:w-auto rounded-xl sm:rounded-2xl bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 px-4 py-3 min-h-[44px] text-sm font-semibold text-white shadow-[0_10px_30px_rgba(16,185,129,0.35)] transition hover:scale-[1.02] hover:shadow-[0_15px_40px_rgba(16,185,129,0.45)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
             >
                 Save profile
             </button>
