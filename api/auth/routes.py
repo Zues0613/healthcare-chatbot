@@ -2,7 +2,7 @@
 Authentication routes
 """
 import os
-from fastapi import APIRouter, Request, Response, HTTPException, status, Depends
+from fastapi import APIRouter, Request, Response, HTTPException, status, Depends, BackgroundTasks
 from fastapi.security import HTTPBearer
 import logging
 
@@ -30,6 +30,7 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     request_data: RegisterRequest,
+    request: Request,
     response: Response
 ):
     """
@@ -58,6 +59,28 @@ async def register(
         
         # Create tokens
         tokens = await auth_service.create_tokens(user)
+        
+        # Track IP address as authenticated
+        try:
+            from ..database.db_client import db_client
+            client_ip = request.client.host if request.client else None
+            forwarded_for = request.headers.get("X-Forwarded-For")
+            if forwarded_for:
+                client_ip = forwarded_for.split(",")[0].strip()
+            
+            if client_ip and client_ip != "unknown":
+                update_ip_query = """
+                    INSERT INTO ip_addresses (ip_address, has_authenticated, customer_id, first_seen, last_seen, visit_count)
+                    VALUES ($1, TRUE, $2, NOW(), NOW(), 1)
+                    ON CONFLICT (ip_address) DO UPDATE
+                    SET has_authenticated = TRUE,
+                        customer_id = COALESCE(ip_addresses.customer_id, $2),
+                        last_seen = NOW(),
+                        visit_count = ip_addresses.visit_count + 1
+                """
+                await db_client.execute(update_ip_query, client_ip, user["id"])
+        except Exception as e:
+            logger.warning(f"Failed to track IP address: {e}")
         
         # Set HTTP-only cookies with secure flag for cross-origin support
         response.set_cookie(
@@ -95,6 +118,7 @@ async def register(
 @router.post("/login", response_model=UserResponse)
 async def login(
     request_data: LoginRequest,
+    request: Request,
     response: Response
 ):
     """
@@ -117,6 +141,28 @@ async def login(
         
         # Create tokens
         tokens = await auth_service.create_tokens(user)
+        
+        # Track IP address as authenticated
+        try:
+            from ..database.db_client import db_client
+            client_ip = request.client.host if request.client else None
+            forwarded_for = request.headers.get("X-Forwarded-For")
+            if forwarded_for:
+                client_ip = forwarded_for.split(",")[0].strip()
+            
+            if client_ip and client_ip != "unknown":
+                update_ip_query = """
+                    INSERT INTO ip_addresses (ip_address, has_authenticated, customer_id, first_seen, last_seen, visit_count)
+                    VALUES ($1, TRUE, $2, NOW(), NOW(), 1)
+                    ON CONFLICT (ip_address) DO UPDATE
+                    SET has_authenticated = TRUE,
+                        customer_id = COALESCE(ip_addresses.customer_id, $2),
+                        last_seen = NOW(),
+                        visit_count = ip_addresses.visit_count + 1
+                """
+                await db_client.execute(update_ip_query, client_ip, user["id"])
+        except Exception as e:
+            logger.warning(f"Failed to track IP address: {e}")
         
         # Set HTTP-only cookies with secure flag for cross-origin support
         response.set_cookie(
@@ -315,3 +361,129 @@ async def refresh_token(
             detail="Failed to refresh token"
         ) from e
 
+
+@router.get("/check-ip")
+async def check_ip(request: Request, background_tasks: BackgroundTasks):
+    """
+    Check if an IP address has been seen before and track it
+    
+    Optimized for speed - uses Redis cache and defers database updates
+    
+    Returns:
+    - is_known: bool - Whether this IP has been seen before
+    - has_authenticated: bool - Whether this IP has ever authenticated
+    """
+    from ..database.db_client import db_client
+    from ..services.cache import cache_service
+    
+    # Get client IP address (fast - no DB query)
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Handle forwarded IPs (from proxies/load balancers)
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        # Take the first IP in the chain
+        client_ip = forwarded_for.split(",")[0].strip()
+    
+    if client_ip == "unknown" or not client_ip:
+        return {
+            "is_known": False,
+            "has_authenticated": False,
+            "ip_address": None
+        }
+    
+    # Try Redis cache first (fastest)
+    cache_key = f"ip_check:{client_ip}"
+    if cache_service.is_available():
+        try:
+            cached_result = await cache_service.get(cache_key)
+            if cached_result:
+                # Return cached result immediately
+                # Schedule async update in background (don't wait)
+                background_tasks.add_task(_update_ip_tracking, client_ip)
+                return cached_result
+        except Exception as e:
+            logger.debug(f"Cache read failed for IP check: {e}")
+    
+    try:
+        # Fast SELECT query only (no UPDATE in critical path)
+        query = """
+            SELECT has_authenticated
+            FROM ip_addresses
+            WHERE ip_address = $1
+        """
+        ip_record = await db_client.fetchrow(query, client_ip)
+        
+        if ip_record:
+            # IP is known
+            result = {
+                "is_known": True,
+                "has_authenticated": ip_record["has_authenticated"],
+                "ip_address": client_ip
+            }
+            
+            # Cache result for 5 minutes
+            if cache_service.is_available():
+                try:
+                    await cache_service.set(cache_key, result, ttl=300)
+                except Exception:
+                    pass
+            
+            # Schedule async update in background (don't wait)
+            background_tasks.add_task(_update_ip_tracking, client_ip)
+            
+            return result
+        else:
+            # New IP - create record (async, don't wait)
+            background_tasks.add_task(_create_ip_record, client_ip)
+            
+            result = {
+                "is_known": False,
+                "has_authenticated": False,
+                "ip_address": client_ip
+            }
+            
+            # Cache result for 1 minute (new IPs might be created soon)
+            if cache_service.is_available():
+                try:
+                    await cache_service.set(cache_key, result, ttl=60)
+                except Exception:
+                    pass
+            
+            return result
+    
+    except Exception as e:
+        logger.error(f"Error checking IP address: {e}", exc_info=True)
+        # Return safe defaults on error
+        return {
+            "is_known": False,
+            "has_authenticated": False,
+            "ip_address": client_ip
+        }
+
+
+async def _update_ip_tracking(client_ip: str, db_client):
+    """Background task to update IP tracking (non-blocking)"""
+    try:
+        update_query = """
+            UPDATE ip_addresses
+            SET last_seen = NOW(), visit_count = visit_count + 1
+            WHERE ip_address = $1
+        """
+        await db_client.execute(update_query, client_ip)
+    except Exception as e:
+        logger.debug(f"Background IP update failed: {e}")
+
+
+async def _create_ip_record(client_ip: str, db_client):
+    """Background task to create IP record (non-blocking)"""
+    try:
+        insert_query = """
+            INSERT INTO ip_addresses (ip_address, first_seen, last_seen, visit_count)
+            VALUES ($1, NOW(), NOW(), 1)
+            ON CONFLICT (ip_address) DO UPDATE
+            SET last_seen = NOW(), visit_count = ip_addresses.visit_count + 1
+        """
+        await db_client.execute(insert_query, client_ip)
+    except Exception as e:
+        logger.debug(f"Background IP creation failed: {e}")

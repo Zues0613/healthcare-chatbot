@@ -631,7 +631,44 @@ A **secure authentication system** using JWT (JSON Web Tokens) stored in HTTP-on
    router.push('/landing');
    ```
 
-8. **Middleware Protection** (`api/auth/middleware.py`):
+8. **API Interceptor for 401 Error Handling** (`frontend/utils/api.ts`):
+   ```typescript
+   // Handles 401 unauthorized responses automatically
+   apiClient.interceptors.response.use(
+     (response) => {
+       updateActivity(); // Update activity on successful calls
+       return response;
+     },
+     async (error: AxiosError) => {
+       if (error.response?.status === 401) {
+         const requestUrl = originalRequest?.url || '';
+         
+         // For /auth/refresh or /auth/me endpoints, session is expired
+         if (requestUrl.includes('/auth/refresh') || requestUrl.includes('/auth/me')) {
+           handleUnauthorized(); // Clear auth and redirect
+           return Promise.reject(error);
+         }
+         
+         // For other endpoints, try to refresh token first
+         // If refresh fails, handleUnauthorized() is called
+       }
+     }
+   );
+   
+   // Helper function that:
+   // 1. Clears all auth tokens and sessions (clearAuth())
+   // 2. Clears user info cache from localStorage
+   // 3. Sets 'authExpired' flag in sessionStorage
+   // 4. Redirects to /auth page with session expired message
+   const handleUnauthorized = () => {
+     clearAuth();
+     localStorage.removeItem('user_info');
+     sessionStorage.setItem('authExpired', 'true');
+     window.location.href = '/auth';
+   };
+   ```
+
+9. **Middleware Protection** (`api/auth/middleware.py`):
    ```python
    async def require_auth(request: Request):
        # Extract token from HTTP-only cookie
@@ -639,7 +676,7 @@ A **secure authentication system** using JWT (JSON Web Tokens) stored in HTTP-on
        # Return user data or raise 401
    ```
 
-9. **Database Integration**:
+10. **Database Integration**:
    - User credentials stored in NeonDB
    - Refresh tokens stored in `refresh_tokens` table
    - Token revocation on logout
@@ -648,6 +685,9 @@ A **secure authentication system** using JWT (JSON Web Tokens) stored in HTTP-on
 
 - ✅ **Security**: HTTP-only cookies prevent XSS attacks
 - ✅ **Activity-Based Expiration**: Tokens expire after 12 hours of inactivity (not fixed time)
+- ✅ **Automatic 401 Handling**: API interceptor automatically clears tokens and redirects on unauthorized responses
+- ✅ **Session Cleanup**: Clears all auth data, user cache, and sessions when token expires
+- ✅ **User Feedback**: Shows "session expired" message when redirected to auth page
 - ✅ **Intelligent Routing**: Automatic redirects prevent unauthorized access
 - ✅ **User Experience**: Seamless navigation with proper authentication flow
 - ✅ **Compliance**: Meets healthcare data protection standards
@@ -985,7 +1025,34 @@ async def get_current_user(request: Request):
     }
 ```
 
-#### 6. **Logout Process**
+#### 6. **401 Unauthorized Error Handling** (`frontend/utils/api.ts`)
+
+**Automatic Session Cleanup on 401:**
+- API interceptor automatically handles all 401 unauthorized responses
+- For `/auth/refresh` or `/auth/me` endpoints: Immediately clears auth and redirects (session expired)
+- For other endpoints: Attempts token refresh first, then clears auth if refresh fails
+
+**What Happens on 401:**
+```typescript
+// 1. Clear all authentication tokens and sessions
+clearAuth(); // Removes all localStorage auth data
+
+// 2. Clear user info cache
+localStorage.removeItem('user_info');
+
+// 3. Set session expired flag for user feedback
+sessionStorage.setItem('authExpired', 'true');
+
+// 4. Redirect to auth page with message
+window.location.href = '/auth';
+```
+
+**User Experience:**
+- User sees "Your session has expired. Please log in again." message on auth page
+- All tokens and cached data are automatically cleared
+- Seamless redirect to login page
+
+#### 7. **Logout Process**
 
 **Frontend Logout:**
 ```typescript
@@ -1019,7 +1086,8 @@ router.push('/landing');  // Redirects to landing page
 
 4. **Token Expiration:**
    - **Activity-Based (REAL expiration)**: No activity for 12 hours → Frontend clears auth → Redirects to `/auth`
-   - **JWT Expiration (Safety maximum)**: Token expires after 7 days → Backend returns 401 → Frontend redirects to `/auth` (unlikely to happen since frontend logs out after 12 hours)
+   - **JWT Expiration (Safety maximum)**: Token expires after 7 days → Backend returns 401 → API interceptor automatically clears auth, removes user cache, sets expired flag, and redirects to `/auth` with message
+   - **401 Error Handling**: Any 401 response triggers automatic session cleanup and redirect
 
 5. **Logout:**
    - User clicks logout → `clearAuth()` called
@@ -1032,6 +1100,9 @@ router.push('/landing');  // Redirects to landing page
 - ✅ **Two-Layer Security**: Frontend activity tracking + Backend JWT validation
 - ✅ **HTTP-Only Cookies**: Tokens stored in secure cookies (not accessible to JavaScript)
 - ✅ **Activity-Based Expiration**: Tokens expire after 12 hours of inactivity (not fixed time)
+- ✅ **Automatic 401 Handling**: API interceptor automatically clears tokens and redirects on unauthorized responses
+- ✅ **Session Cleanup**: Automatically clears all auth data, user cache, and sessions when token expires
+- ✅ **User Feedback**: Shows "session expired" message when redirected to auth page
 - ✅ **Automatic Routing**: System automatically redirects based on auth status
 - ✅ **Cross-Origin Support**: Works with frontend and backend on different domains
 - ✅ **Secure by Default**: All tokens use secure flags and proper SameSite policies
@@ -1352,9 +1423,149 @@ async def logout(request: Request, response: Response, user: dict):
 
 ---
 
+## 16. Intelligent IP-Based User Routing & Session Management
+
+### What is the feature about?
+
+A **smart routing system** that tracks IP addresses and intelligently routes users based on their authentication status and visit history. The system distinguishes between new visitors, returning users with expired sessions, and authenticated users, providing appropriate redirects and user experiences.
+
+### Why we need that feature?
+
+- **User Experience**: New users see a landing page, returning users with expired sessions get clear messaging
+- **Security**: Properly handles session expiration and token invalidation
+- **Analytics**: Tracks IP addresses for understanding user patterns and preventing abuse
+- **Performance**: Fast IP lookup with Redis caching for minimal latency
+- **Session Management**: Automatically flushes invalid tokens and guides users to re-authenticate
+
+### How we have implemented that feature in detail?
+
+**Database Schema** (`api/scripts/create_ip_addresses_table.py`):
+
+```sql
+CREATE TABLE IF NOT EXISTS ip_addresses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ip_address VARCHAR(45) NOT NULL UNIQUE, -- IPv6 max length is 45 chars
+    first_seen TIMESTAMP NOT NULL DEFAULT NOW(),
+    last_seen TIMESTAMP NOT NULL DEFAULT NOW(),
+    has_authenticated BOOLEAN NOT NULL DEFAULT FALSE, -- Whether this IP has ever authenticated
+    customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL, -- Link to customer if authenticated
+    visit_count INTEGER NOT NULL DEFAULT 1, -- Number of times this IP has visited
+    metadata JSONB DEFAULT '{}'::jsonb -- Store additional metadata
+);
+```
+
+**Three-Tier Routing Logic** (`frontend/app/page.tsx`):
+
+1. **Case 1: New User (No Tokens, New IP)**
+   - User has never visited before
+   - No authentication tokens present
+   - **Action**: Redirect to `/landing` page
+   - **Purpose**: Introduce new users to the application
+
+2. **Case 2: Known IP with Invalid/Expired Tokens**
+   - IP address has been seen before (has authenticated previously)
+   - Tokens are missing, expired, or invalid
+   - **Action**: 
+     - Flush all tokens and auth data
+     - Redirect to `/auth` page
+     - Show "Your session has expired" popup message
+     - Automatically switch to sign-in section
+   - **Purpose**: Guide returning users to re-authenticate
+
+3. **Case 3: Valid User with Valid Tokens**
+   - User has valid authentication tokens
+   - Tokens pass validation via `/auth/me` endpoint
+   - **Action**: Allow access to main application (`/`)
+   - **Purpose**: Seamless experience for authenticated users
+
+**Backend IP Tracking Endpoint** (`api/auth/routes.py`):
+
+```python
+@router.get("/check-ip")
+async def check_ip(request: Request):
+    """
+    Check if an IP address has been seen before and track it
+    Optimized for speed - uses Redis cache and defers database updates
+    """
+    # Get client IP (handles X-Forwarded-For headers)
+    client_ip = extract_client_ip(request)
+    
+    # Try Redis cache first (fastest - ~1-5ms)
+    cache_key = f"ip_check:{client_ip}"
+    cached_result = await cache_service.get(cache_key)
+    if cached_result:
+        # Return cached result immediately
+        # Schedule async update in background
+        return cached_result
+    
+    # Fast SELECT query only (no UPDATE in critical path)
+    ip_record = await db_client.fetchrow(
+        "SELECT has_authenticated FROM ip_addresses WHERE ip_address = $1",
+        client_ip
+    )
+    
+    # Cache result and schedule background updates
+    # Returns: is_known, has_authenticated, ip_address
+```
+
+**Performance Optimizations**:
+
+1. **Redis Caching**:
+   - 5-minute TTL for known IPs
+   - 1-minute TTL for new IPs
+   - Cache hit: ~1-5ms response time
+
+2. **Async Database Updates**:
+   - SELECT queries in critical path (fast)
+   - UPDATE/INSERT queries run asynchronously in background
+   - Non-blocking updates ensure fast responses
+
+3. **Frontend Optimization**:
+   - IP check is the **first API call** on page load
+   - Parallel processing with token validation
+   - Fallback to localStorage if API fails
+
+**IP Tracking on Authentication** (`api/auth/routes.py`):
+
+- Login endpoint marks IP as authenticated
+- Register endpoint marks IP as authenticated
+- Links IP to customer_id for analytics
+- Updates visit_count and last_seen timestamps
+
+**Session Expiration Handling** (`frontend/app/auth/page.tsx`):
+
+```typescript
+// Show expired message if redirected from expired token
+useEffect(() => {
+  const authExpired = sessionStorage.getItem('authExpired');
+  if (authExpired === 'true') {
+    sessionStorage.removeItem('authExpired');
+    // Switch to login mode (sign-in section)
+    setMode('login');
+    // Show session expired message
+    addToast('Your session has expired. Please log in again.', 'info');
+  }
+}, [addToast]);
+```
+
+### Advantages of using this feature?
+
+- ✅ **Fast IP Lookup**: Redis caching provides sub-5ms response times
+- ✅ **Smart Routing**: Different experiences for new vs returning users
+- ✅ **Session Security**: Properly handles expired sessions and invalid tokens
+- ✅ **User Guidance**: Clear messaging when sessions expire
+- ✅ **Analytics Ready**: Tracks IP patterns for understanding user behavior
+- ✅ **Performance Optimized**: Background database updates don't block requests
+- ✅ **Scalable**: Handles high traffic with caching and async operations
+- ✅ **Proxy Support**: Handles X-Forwarded-For headers for load balancers
+- ✅ **Data Safety**: Migration script uses `IF NOT EXISTS` - safe to run multiple times
+- ✅ **No Data Loss**: Only creates new table, doesn't modify existing data
+
+---
+
 ## Summary
 
-These 15 core features (plus authentication flow documentation) form the foundation of a production-ready, scalable, and secure healthcare chatbot application. Each feature adds significant value and weightage to the project, demonstrating:
+These 16 core features (plus authentication flow documentation) form the foundation of a production-ready, scalable, and secure healthcare chatbot application. Each feature adds significant value and weightage to the project, demonstrating:
 
 - **Technical Excellence**: Modern architecture with best practices
 - **Healthcare Focus**: Domain-specific features for medical use cases

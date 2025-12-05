@@ -242,6 +242,32 @@
 
 #### Benefits:
 - ✅ User engagement and satisfaction tracking
+- ✅ Quality improvement insights
+- ✅ Response accuracy monitoring
+
+</details>
+
+<details>
+<summary><b>11. 🎯 Intelligent IP-Based User Routing</b> - Click to expand</summary>
+
+#### Routing Features:
+- **Smart user routing** based on IP tracking and authentication status
+- **Three-tier redirect logic** for new users, returning users, and authenticated users
+- **Fast IP lookup** with Redis caching (~1-5ms response time)
+- **Session expiration handling** with clear user messaging
+
+#### Routing Logic:
+- ✅ **New users** → Redirected to landing page
+- ✅ **Returning users with expired sessions** → Redirected to auth with "session expired" message
+- ✅ **Authenticated users** → Seamless access to main application
+
+#### Performance:
+- ✅ Redis-cached IP lookups for minimal latency
+- ✅ Async database updates (non-blocking)
+- ✅ Proxy/load balancer support (X-Forwarded-For headers)
+- ✅ Analytics-ready IP tracking
+
+</details>
 - ✅ Quality improvement through feedback analytics
 - ✅ Data integrity with proper database constraints
 - ✅ Seamless user experience with persistent feedback
@@ -714,7 +740,12 @@ CORS_ORIGINS=http://localhost:3000
 ### 🗄️ Step 5: Database Setup
 
 ```bash
-# Run database migrations
+# Run database migrations to create all tables
+cd api
+python scripts/create_tables.py
+
+# Or run individual migration for IP tracking (optional, included in create_tables.py)
+python scripts/create_ip_addresses_table.py
 cd api
 python scripts/create_tables.py
 
@@ -787,12 +818,17 @@ pnpm dev
 
 ### 📱 Using the Application
 
-1. **🏠 Landing Page**: Visit `http://localhost:3000` to see the landing page
+1. **🏠 Landing Page**: Visit `http://localhost:3000` - New users will see the landing page
 2. **🔐 Authentication**: Click "Get Started" to register/login
+   - **New users**: Redirected to landing page
+   - **Returning users with expired sessions**: Redirected to auth with "session expired" message
+   - **Authenticated users**: Direct access to chat interface
 3. **💬 Chat Interface**: After authentication, you'll be redirected to the chat interface
 4. **❓ Ask Questions**: Type your health-related questions in the chat
 5. **📜 View History**: Access your chat history from the sidebar
 6. **🔍 Search**: Use the search modal to find specific conversations
+
+> 💡 **Note**: The application uses intelligent IP-based routing to provide appropriate experiences for new users, returning users, and authenticated users.
 
 ---
 
@@ -861,6 +897,33 @@ Authorization: Bearer <token>
 POST /auth/logout
 Authorization: Bearer <token>
 ```
+
+#### 🌐 Check IP Address
+
+```http
+GET /auth/check-ip
+```
+
+**Response:**
+```json
+{
+  "is_known": true,
+  "has_authenticated": true,
+  "ip_address": "192.168.1.1",
+  "visit_count": 5
+}
+```
+
+**Purpose:**
+- Fast IP lookup for routing decisions
+- Tracks whether IP has been seen before
+- Indicates if IP has ever authenticated
+- Used for intelligent user routing
+
+**Performance:**
+- Redis cached (5-minute TTL for known IPs)
+- Sub-5ms response time on cache hit
+- Async database updates (non-blocking)
 
 ### 💬 Chat Endpoints
 

@@ -85,12 +85,15 @@ export default function AuthExperience() {
     toastTimers.current[id] = timer;
   }, []);
 
-  // Show expired message if redirected from expired token
+  // Show expired message if redirected from expired token and switch to login mode
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const authExpired = sessionStorage.getItem('authExpired');
       if (authExpired === 'true') {
         sessionStorage.removeItem('authExpired');
+        // Switch to login mode (sign-in section)
+        setMode('login');
+        // Show session expired message
         addToast('Your session has expired. Please log in again.', 'info');
       }
     }

@@ -363,110 +363,167 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
 
   // Check authentication on mount and get user info
   useEffect(() => {
-    // Check if token has expired
-    if (!isAuthenticated()) {
-      // Token expired or not authenticated, redirect to auth with message
-      setIsRedirecting(true);
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem('authExpired', 'true');
+    const checkAuthAndRedirect = async () => {
+      if (typeof window === 'undefined') return;
+
+      // FIRST: Check IP address as fast as possible (lightweight endpoint with caching)
+      let isKnownIp = false;
+      let hasAuthenticated = false;
+      try {
+        // This is the first API call - optimized for speed with Redis cache
+        const ipCheckResponse = await apiClient.get('/auth/check-ip');
+        isKnownIp = ipCheckResponse.data?.is_known || false;
+        hasAuthenticated = ipCheckResponse.data?.has_authenticated || false;
+      } catch (err) {
+        console.warn('Failed to check IP address:', err);
+        // On error, fall back to localStorage check
+        const hasTokens = localStorage.getItem('health_companion_auth') !== null;
+        const hasUserInfo = localStorage.getItem('user_info') !== null;
+        const hasUserData = localStorage.getItem('health_companion_user') !== null;
+        isKnownIp = hasTokens || hasUserInfo || hasUserData;
       }
-      router.push('/auth');
-      return;
-    } else {
-      setIsAuthChecked(true);
-      // Update activity on mount (user is active)
-      updateActivity();
-      
-      // Get customer ID from user info (with browser cache)
-      const fetchUserInfo = async () => {
+
+      // Check if we have any tokens stored (even if expired)
+      const hasTokens = localStorage.getItem('health_companion_auth') !== null;
+
+      // Case 1: New user (no tokens, new IP) → redirect to /landing
+      if (!hasTokens && !isKnownIp) {
+        setIsRedirecting(true);
+        router.push('/landing');
+        return;
+      }
+
+      // Case 2 & 3: Check if tokens are valid
+      // If we have tokens, validate them with the backend
+      if (hasTokens) {
         try {
-          // Try browser cache first
-          const cacheKey = 'user_info';
-          const cached = localStorage.getItem(cacheKey);
-          if (cached) {
-            const { data, timestamp } = JSON.parse(cached);
-            // Use cache if less than 5 minutes old
-            if (Date.now() - timestamp < 5 * 60 * 1000 && data?.id) {
-              setCustomerId(data.id);
-              // Fetch from API in background to update cache (non-blocking)
-              apiClient.get('/auth/me')
-                .then((response) => {
-                  if (response.data?.id) {
-                    setCustomerId(response.data.id);
-                    // Save to browser cache
-                    try {
-                      const cacheData = {
-                        data: response.data,
-                        timestamp: Date.now(),
-                      };
-                      localStorage.setItem(cacheKey, JSON.stringify(cacheData));
-                    } catch (err) {
-                      console.warn('Error saving user info to cache:', err);
-                    }
-                  }
-                })
-                .catch((err) => {
-                  console.warn('Background user info refresh failed:', err);
-                  // Keep using cached data on error
-                });
-              return;
-            }
-          }
-          
-          // If no cache or cache is stale, fetch from API
+          // Validate tokens by calling /auth/me
           const response = await apiClient.get('/auth/me');
+          
+          // Case 3: Valid user with valid tokens → allow access
           if (response.data?.id) {
+            setIsAuthChecked(true);
+            // Update activity on mount (user is active)
+            updateActivity();
             setCustomerId(response.data.id);
+            
             // Save to browser cache
             try {
               const cacheData = {
                 data: response.data,
                 timestamp: Date.now(),
               };
-              localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+              localStorage.setItem('user_info', JSON.stringify(cacheData));
             } catch (err) {
               console.warn('Error saving user info to cache:', err);
             }
-          }
-        } catch (err) {
-          console.error('Error fetching user info:', err);
-          // If API fails but we have cached data, use it
-          const cacheKey = 'user_info';
-          const cached = localStorage.getItem(cacheKey);
-          if (cached) {
-            try {
-              const { data } = JSON.parse(cached);
-              if (data?.id) {
+            
+            // Continue with normal flow - fetch user info if needed
+            const cacheKey = 'user_info';
+            const cached = localStorage.getItem(cacheKey);
+            if (cached) {
+              const { data, timestamp } = JSON.parse(cached);
+              // Use cache if less than 5 minutes old
+              if (Date.now() - timestamp < 5 * 60 * 1000 && data?.id) {
                 setCustomerId(data.id);
+                // Fetch from API in background to update cache (non-blocking)
+                apiClient.get('/auth/me')
+                  .then((response) => {
+                    if (response.data?.id) {
+                      setCustomerId(response.data.id);
+                      // Save to browser cache
+                      try {
+                        const cacheData = {
+                          data: response.data,
+                          timestamp: Date.now(),
+                        };
+                        localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+                      } catch (err) {
+                        console.warn('Error saving user info to cache:', err);
+                      }
+                    }
+                  })
+                  .catch((err) => {
+                    console.warn('Background user info refresh failed:', err);
+                  });
+                return;
               }
-            } catch (parseErr) {
-              console.warn('Error parsing cached user info:', parseErr);
             }
+            
+            // If no cache or cache is stale, fetch from API
+            const response2 = await apiClient.get('/auth/me');
+            if (response2.data?.id) {
+              setCustomerId(response2.data.id);
+              // Save to browser cache
+              try {
+                const cacheData = {
+                  data: response2.data,
+                  timestamp: Date.now(),
+                };
+                localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+              } catch (err) {
+                console.warn('Error saving user info to cache:', err);
+              }
+            }
+            return;
           }
-        }
-      };
-      fetchUserInfo();
-      
-      // Check if we should show welcome screen (when coming from /auth)
-      // Use a small delay to ensure sessionStorage is available
-      const checkWelcome = () => {
-        if (typeof window !== 'undefined') {
-          const justLoggedIn = sessionStorage.getItem('justLoggedIn') === 'true';
+        } catch (err: any) {
+          // If /auth/me fails (401 or other error), tokens are invalid
+          // Case 2: Known IP but invalid tokens → flush tokens and redirect to /auth
+          console.warn('Token validation failed:', err);
           
-          if (justLoggedIn) {
-            setShowWelcome(true);
-            // Clear the flag immediately so it doesn't show again on refresh
-            sessionStorage.removeItem('justLoggedIn');
-          }
+          // Flush all tokens and auth data
+          clearAuth();
+          localStorage.removeItem('user_info');
+          
+          setIsRedirecting(true);
+          // Set flag to show session expired message
+          sessionStorage.setItem('authExpired', 'true');
+          // Redirect to auth page, specifically to sign in section
+          router.push('/auth');
+          return;
         }
-      };
-      
-      // Check immediately and also after a small delay to catch any timing issues
-      checkWelcome();
-      const timer = setTimeout(checkWelcome, 100);
-      return () => clearTimeout(timer);
-    }
+      }
+
+      // If we reach here, we have a known IP but no valid tokens
+      // This is Case 2: Known IP but invalid/expired tokens
+      if (isKnownIp && !hasTokens) {
+        // Flush any remaining auth data
+        clearAuth();
+        localStorage.removeItem('user_info');
+        
+        setIsRedirecting(true);
+        // Set flag to show session expired message
+        sessionStorage.setItem('authExpired', 'true');
+        // Redirect to auth page, specifically to sign in section
+        router.push('/auth');
+        return;
+      }
+    };
+
+    checkAuthAndRedirect();
   }, [router]);
+
+  // Check if we should show welcome screen (when coming from /auth)
+  useEffect(() => {
+    // Use a small delay to ensure sessionStorage is available
+    const checkWelcome = () => {
+      if (typeof window !== 'undefined') {
+        const justLoggedIn = sessionStorage.getItem('justLoggedIn') === 'true';
+        
+        if (justLoggedIn) {
+          setShowWelcome(true);
+          // Clear the flag immediately so it doesn't show again on refresh
+          sessionStorage.removeItem('justLoggedIn');
+        }
+      }
+    };
+    
+    // Check immediately and also after a small delay to catch any timing issues
+    checkWelcome();
+    const timer = setTimeout(checkWelcome, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Track user activity on various interactions
   useEffect(() => {

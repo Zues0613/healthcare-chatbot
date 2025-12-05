@@ -112,6 +112,24 @@ CREATE TABLE IF NOT EXISTS message_feedback (
 CREATE INDEX IF NOT EXISTS idx_message_feedback_message_id ON message_feedback(message_id);
 CREATE INDEX IF NOT EXISTS idx_message_feedback_customer_id ON message_feedback(customer_id);
 CREATE INDEX IF NOT EXISTS idx_message_feedback_feedback ON message_feedback(feedback);
+
+-- Create ip_addresses table to track IP addresses
+CREATE TABLE IF NOT EXISTS ip_addresses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ip_address VARCHAR(45) NOT NULL UNIQUE, -- IPv6 max length is 45 chars
+    first_seen TIMESTAMP NOT NULL DEFAULT NOW(),
+    last_seen TIMESTAMP NOT NULL DEFAULT NOW(),
+    has_authenticated BOOLEAN NOT NULL DEFAULT FALSE, -- Whether this IP has ever authenticated
+    customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL, -- Link to customer if authenticated (matches customers.id type)
+    visit_count INTEGER NOT NULL DEFAULT 1, -- Number of times this IP has visited
+    metadata JSONB DEFAULT '{}'::jsonb -- Store additional metadata
+);
+
+-- Create indexes for ip_addresses
+CREATE INDEX IF NOT EXISTS idx_ip_addresses_ip_address ON ip_addresses(ip_address);
+CREATE INDEX IF NOT EXISTS idx_ip_addresses_customer_id ON ip_addresses(customer_id);
+CREATE INDEX IF NOT EXISTS idx_ip_addresses_has_authenticated ON ip_addresses(has_authenticated);
+CREATE INDEX IF NOT EXISTS idx_ip_addresses_last_seen ON ip_addresses(last_seen);
 """
 
 async def create_tables():
@@ -149,7 +167,7 @@ async def create_tables():
         
         # Verify tables were created
         print("Verifying tables...")
-        required_tables = ["customers", "customer_profiles", "refresh_tokens", "chat_sessions", "chat_messages", "message_feedback"]
+        required_tables = ["customers", "customer_profiles", "refresh_tokens", "chat_sessions", "chat_messages", "message_feedback", "ip_addresses"]
         for table in required_tables:
             query = """
                 SELECT EXISTS (
