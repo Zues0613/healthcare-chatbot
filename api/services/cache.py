@@ -306,7 +306,8 @@ class CacheService:
     async def get_from_cache(
         self,
         cache_key: str,
-        retry_count: int = 2
+        retry_count: int = 1,  # Reduced retries for speed
+        fast_path: bool = False  # Fast path for critical endpoints like IP check
     ) -> Optional[Dict[str, Any]]:
         """
         Get cached response from L2 (Upstash Redis) with retry logic
@@ -315,11 +316,54 @@ class CacheService:
         
         Args:
             cache_key: Cache key string
-            retry_count: Number of retries on failure
+            retry_count: Number of retries on failure (default 1 for speed)
+            fast_path: If True, skip retries and error handling for maximum speed
             
         Returns:
             Cached response dict or None
         """
+        # Fast path: skip connection check and retries for maximum speed
+        if fast_path:
+            if not self.redis_client:
+                return None
+            try:
+                # For Upstash Redis (synchronous), run in thread pool to avoid blocking
+                # For standard Redis, check if async
+                if self.is_upstash:
+                    # Upstash is synchronous - run in thread to avoid blocking event loop
+                    import concurrent.futures
+                    loop = asyncio.get_event_loop()
+                    cached_data = await loop.run_in_executor(
+                        None, 
+                        lambda: self.redis_client.get(cache_key)
+                    )
+                else:
+                    # Standard redis - check if async
+                    if asyncio.iscoroutinefunction(self.redis_client.get):
+                        cached_data = await self.redis_client.get(cache_key)
+                    else:
+                        # Synchronous standard redis - run in thread
+                        import concurrent.futures
+                        loop = asyncio.get_event_loop()
+                        cached_data = await loop.run_in_executor(
+                            None,
+                            lambda: self.redis_client.get(cache_key)
+                        )
+                
+                if cached_data:
+                    if cached_data.startswith('H4sI'):
+                        cached_data = self._decompress_data(cached_data)
+                    response_data = json.loads(cached_data)
+                    self._record_stat("hits", "L2")
+                    return response_data
+                else:
+                    self._record_stat("misses", "L2")
+                    return None
+            except Exception:
+                # Fast path: fail silently, return None
+                return None
+        
+        # Normal path: with connection check and retries
         # Ensure Redis connection is active
         self.ensure_redis_connection()
         
@@ -400,7 +444,8 @@ class CacheService:
         cache_key: str,
         response_data: Dict[str, Any],
         ttl: Optional[int] = None,
-        retry_count: int = 2
+        retry_count: int = 1,  # Reduced retries for speed
+        fast_path: bool = False  # Fast path for critical writes
     ) -> bool:
         """
         Store response in L2 (Upstash Redis) cache with compression
@@ -416,6 +461,33 @@ class CacheService:
         Returns:
             True if successful, False otherwise
         """
+        # Fast path: skip connection check for maximum speed
+        if fast_path:
+            if not self.redis_client:
+                return False
+            try:
+                serialized = json.dumps(response_data)
+                compressed_data, _ = self._compress_data(serialized)
+                ttl = ttl or self.cache_ttl
+                
+                if self.is_upstash:
+                    self.redis_client.setex(cache_key, ttl, compressed_data)
+                else:
+                    if asyncio.iscoroutinefunction(self.redis_client.setex):
+                        await self.redis_client.setex(cache_key, ttl, compressed_data)
+                    elif hasattr(self.redis_client, 'setex'):
+                        self.redis_client.setex(cache_key, ttl, compressed_data)
+                    else:
+                        if asyncio.iscoroutinefunction(self.redis_client.set):
+                            await self.redis_client.set(cache_key, compressed_data, ex=ttl)
+                        else:
+                            self.redis_client.set(cache_key, compressed_data, ex=ttl)
+                return True
+            except Exception:
+                # Fast path: fail silently
+                return False
+        
+        # Normal path: with connection check
         # Ensure Redis connection is active
         self.ensure_redis_connection()
         
@@ -669,20 +741,10 @@ class CacheService:
         return info
     
     def is_available(self) -> bool:
-        """Check if Redis cache is available"""
-        if self.redis_client is None:
-            return False
-        # Test connection if available
-        try:
-            self.redis_client.ping()
-            return True
-        except:
-            # Connection lost, try to reconnect
-            try:
-                self._init_redis()
-                return self.redis_client is not None
-            except:
-                return False
+        """Check if Redis cache is available (fast check, no ping)"""
+        # Fast check - just see if client exists
+        # Don't ping on every check (too slow)
+        return self.redis_client is not None
     
     def ensure_redis_connection(self):
         """Ensure Redis connection is active, reconnect if needed"""

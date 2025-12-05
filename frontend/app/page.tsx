@@ -367,20 +367,31 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
       if (typeof window === 'undefined') return;
 
       // FIRST: Check IP address as fast as possible (lightweight endpoint with caching)
+      // This endpoint has a 500ms timeout, so it should respond quickly
       let isKnownIp = false;
       let hasAuthenticated = false;
       try {
         // This is the first API call - optimized for speed with Redis cache
-        const ipCheckResponse = await apiClient.get('/auth/check-ip');
+        // Add timeout to prevent hanging (max 1 second)
+        const ipCheckResponse = await Promise.race([
+          apiClient.get('/auth/check-ip'),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('IP check timeout')), 1000)
+          )
+        ]) as any;
+        
         isKnownIp = ipCheckResponse.data?.is_known || false;
         hasAuthenticated = ipCheckResponse.data?.has_authenticated || false;
-      } catch (err) {
-        console.warn('Failed to check IP address:', err);
-        // On error, fall back to localStorage check
+      } catch (err: any) {
+        console.warn('Failed to check IP address:', err?.message || err);
+        // On error or timeout, fall back to localStorage check
+        // This ensures the app continues to work even if IP check fails
         const hasTokens = localStorage.getItem('health_companion_auth') !== null;
         const hasUserInfo = localStorage.getItem('user_info') !== null;
         const hasUserData = localStorage.getItem('health_companion_user') !== null;
         isKnownIp = hasTokens || hasUserInfo || hasUserData;
+        // If we have any stored data, assume IP might be known
+        // This is a safe fallback that won't block legitimate users
       }
 
       // Check if we have any tokens stored (even if expired)
@@ -397,8 +408,13 @@ export default function Home({ initialSessionId }: HomeProps = {}) {
       // If we have tokens, validate them with the backend
       if (hasTokens) {
         try {
-          // Validate tokens by calling /auth/me
-          const response = await apiClient.get('/auth/me');
+          // Validate tokens by calling /auth/me with timeout
+          const response = await Promise.race([
+            apiClient.get('/auth/me'),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Auth check timeout')), 3000)
+            )
+          ]) as any;
           
           // Case 3: Valid user with valid tokens → allow access
           if (response.data?.id) {

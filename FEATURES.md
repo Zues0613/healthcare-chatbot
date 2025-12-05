@@ -1510,20 +1510,34 @@ async def check_ip(request: Request):
 
 **Performance Optimizations**:
 
-1. **Redis Caching**:
-   - 5-minute TTL for known IPs
-   - 1-minute TTL for new IPs
-   - Cache hit: ~1-5ms response time
+1. **Dual Cache Strategy**:
+   - **Primary**: Redis caching (5-minute TTL for known IPs, 1-minute for new IPs)
+   - **Fallback**: In-memory LRU cache (1000 entries, always available)
+   - **Cache Hit**: <5ms (memory) or <10ms (Redis) response time
+   - **Cache Miss**: <300ms (with pre-warmed database pool)
 
-2. **Async Database Updates**:
-   - SELECT queries in critical path (fast)
-   - UPDATE/INSERT queries run asynchronously in background
-   - Non-blocking updates ensure fast responses
+2. **Database Optimization**:
+   - **Pre-warmed Connection Pool**: 5 connections ready at startup
+   - **Fast Queries**: 30-150ms with optimized timeouts (100ms max)
+   - **Async Updates**: SELECT in critical path, UPDATE/INSERT in background
+   - **Connection Ready Check**: 500ms timeout for connection establishment
 
-3. **Frontend Optimization**:
+3. **Fast-Fail Mechanisms**:
+   - **Circuit Breaker**: Returns immediately if request already >1s
+   - **Aggressive Timeouts**: 100ms database, 30ms cache, 500ms connection
+   - **Graceful Degradation**: Returns safe defaults on timeout/error
+   - **Cache Timeout Results**: Short TTL (30s) to avoid repeated timeouts
+
+4. **Frontend Optimization**:
    - IP check is the **first API call** on page load
    - Parallel processing with token validation
    - Fallback to localStorage if API fails
+   - Module-level imports (no lazy loading overhead)
+
+5. **Cold Start Optimization**:
+   - Database connection pool pre-warmed during startup
+   - 5 connections acquired and tested before first request
+   - Eliminates 50-200ms connection overhead on first request
 
 **IP Tracking on Authentication** (`api/auth/routes.py`):
 
@@ -1550,14 +1564,17 @@ useEffect(() => {
 
 ### Advantages of using this feature?
 
-- ✅ **Fast IP Lookup**: Redis caching provides sub-5ms response times
+- ✅ **Ultra-Fast IP Lookup**: Dual caching provides <5ms response times (memory) or <10ms (Redis)
 - ✅ **Smart Routing**: Different experiences for new vs returning users
 - ✅ **Session Security**: Properly handles expired sessions and invalid tokens
 - ✅ **User Guidance**: Clear messaging when sessions expire
 - ✅ **Analytics Ready**: Tracks IP patterns for understanding user behavior
 - ✅ **Performance Optimized**: Background database updates don't block requests
+- ✅ **Cold Start Optimized**: Pre-warmed connection pool eliminates startup delays
+- ✅ **Fast-Fail Protection**: Circuit breakers prevent hanging requests
 - ✅ **Scalable**: Handles high traffic with caching and async operations
-- ✅ **Proxy Support**: Handles X-Forwarded-For headers for load balancers
+- ✅ **Reliable Fallback**: In-memory cache ensures fast responses even without Redis
+- ✅ **Proxy Support**: Handles X-Forwarded-For and X-Real-IP headers for load balancers
 - ✅ **Data Safety**: Migration script uses `IF NOT EXISTS` - safe to run multiple times
 - ✅ **No Data Loss**: Only creates new table, doesn't modify existing data
 

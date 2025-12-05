@@ -91,14 +91,14 @@ class DatabaseClient:
                 return False
             
             try:
-                # Create persistent connection pool with optimized settings
+                # Create persistent connection pool with optimized settings for speed
+                # Pre-warm pool with more connections for faster cold start
                 self.pool = await asyncpg.create_pool(
                     database_url,
-                    min_size=2,  # Keep at least 2 connections alive
-                    max_size=20,  # Allow up to 20 concurrent connections
-                    command_timeout=60,
+                    min_size=5,  # Keep more connections alive for faster response
+                    max_size=30,  # Allow more concurrent connections
+                    command_timeout=10,  # Shorter timeout for faster failure detection
                     max_queries=50000,  # Recycle connections after many queries
-                    max_inactive_connection_lifetime=300,  # Close idle connections after 5 minutes
                     setup=self._setup_connection,  # Setup each connection
                 )
                 self._is_connected = True
@@ -106,7 +106,26 @@ class DatabaseClient:
                 self._last_connection_error = None
                 logger.info("Successfully created persistent PostgreSQL connection pool")
                 
-                # Test connection
+                # Pre-warm pool by acquiring all min_size connections
+                # This ensures connections are ready immediately (faster cold start)
+                logger.info("Pre-warming connection pool for faster cold start...")
+                warmup_connections = []
+                try:
+                    pool_size = getattr(self.pool, '_minsize', 5)
+                    for i in range(min(5, pool_size)):
+                        conn = await self.pool.acquire()
+                        warmup_connections.append(conn)
+                        # Test each connection
+                        await conn.fetchval("SELECT 1")
+                    logger.info(f"Pre-warmed {len(warmup_connections)} database connections")
+                except Exception as e:
+                    logger.warning(f"Could not pre-warm all connections: {e}")
+                finally:
+                    # Release all pre-warmed connections back to pool
+                    for conn in warmup_connections:
+                        await self.pool.release(conn)
+                
+                # Final connection test
                 async with self.pool.acquire() as conn:
                     await conn.fetchval("SELECT 1")
                 

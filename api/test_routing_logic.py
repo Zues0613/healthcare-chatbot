@@ -80,15 +80,25 @@ async def test_ip_check_endpoint(client: httpx.AsyncClient, test_ip: Optional[st
         headers["X-Forwarded-For"] = test_ip
     
     try:
+        # Use shorter timeout for IP check (should be fast with caching)
+        # First request might be slower (cache miss), subsequent should be <10ms
         response = await client.get(
             f"{API_BASE}/auth/check-ip",
             headers=headers,
-            timeout=10.0
+            timeout=3.0  # 3 second timeout to handle first request (DB query)
         )
         
         if response.status_code == 200:
             data = response.json()
             print_success(f"IP Check Response: {data}")
+            # Check response time
+            elapsed = response.elapsed.total_seconds() * 1000
+            if elapsed < 100:
+                print_info(f"Response time: {elapsed:.2f}ms (excellent - likely cached)")
+            elif elapsed < 500:
+                print_info(f"Response time: {elapsed:.2f}ms (good)")
+            else:
+                print_warning(f"Response time: {elapsed:.2f}ms (slow - might not be using cache)")
             return data
         else:
             print_error(f"IP Check failed with status {response.status_code}: {response.text}")
@@ -96,9 +106,11 @@ async def test_ip_check_endpoint(client: httpx.AsyncClient, test_ip: Optional[st
     except httpx.ConnectError as e:
         print_error(f"IP Check request failed - Cannot connect to server: {e}")
         print_warning(f"Make sure the backend server is running at {API_BASE}")
+        print_warning("To start the server: cd api && python -m uvicorn main:app --reload")
         return {}
     except httpx.TimeoutException as e:
-        print_error(f"IP Check request timed out: {e}")
+        print_error(f"IP Check request timed out (exceeded 2s): {e}")
+        print_warning("This suggests the server might be slow or the endpoint is not optimized")
         return {}
     except Exception as e:
         print_error(f"IP Check request failed: {type(e).__name__}: {e}")
@@ -320,7 +332,27 @@ async def main():
     
     # Check if server is running
     print_info(f"Testing against API: {API_BASE}")
-    print_info("Make sure the backend server is running!\n")
+    print_info("Make sure the backend server is running!")
+    print_info("To start: cd api && python -m uvicorn main:app --reload\n")
+    
+    # Quick server health check
+    try:
+        async with httpx.AsyncClient() as client:
+            health_response = await client.get(f"{API_BASE}/", timeout=2.0)
+            if health_response.status_code in [200, 404]:  # 404 is OK, means server is running
+                print_success("Server is running and responding")
+            else:
+                print_warning(f"Server responded with status {health_response.status_code}")
+    except httpx.ConnectError:
+        print_error("Cannot connect to server - server is not running!")
+        print_warning("Please start the server before running tests")
+        print_warning("Command: cd api && python -m uvicorn main:app --reload")
+        return
+    except Exception as e:
+        print_warning(f"Server health check failed: {e}")
+        print_info("Continuing with tests anyway...")
+    
+    print("")
     
     # Test 1: Database IP tracking
     print_header("Test 1: Database IP Tracking")

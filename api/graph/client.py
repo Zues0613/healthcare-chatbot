@@ -46,15 +46,20 @@ class Neo4jClient:
         # Connect if not already connected
         if not self.driver:
             try:
+                logger.info(f"Attempting to connect to Neo4j at {self.uri[:50]}..." if len(self.uri) > 50 else f"Attempting to connect to Neo4j at {self.uri}")
+                logger.debug(f"Neo4j connection settings: user={self.user}, database={self.database or 'default'}, trust_all={self.trust_all}")
+                
                 uri = self.uri
                 if self.trust_all:
                     uri = (
                         uri.replace("neo4j+s://", "neo4j+ssc://", 1)
                         .replace("bolt+s://", "bolt+ssc://", 1)
                     )
+                    logger.debug("Neo4j trust_all_certs enabled - using self-signed certificate mode")
 
                 # Create driver with connection pool (persistent connection)
                 # Neo4j driver manages connection pooling internally
+                logger.debug("Creating Neo4j driver with connection pool...")
                 self.driver = GraphDatabase.driver(
                     uri,
                     auth=(self.user, self.password),
@@ -65,6 +70,7 @@ class Neo4jClient:
                 )
                 
                 # Test connection
+                logger.debug("Testing Neo4j connection with health check query...")
                 session_args = {}
                 if self.database:
                     session_args["database"] = self.database
@@ -74,11 +80,25 @@ class Neo4jClient:
                     result.single()
                 
                 self._is_connected = True
-                logger.info(f"Neo4j connection pool initialized at {uri}")
+                logger.info(f"✅ Neo4j connection pool initialized successfully at {uri}")
+                logger.info(f"Neo4j connection pool ready (max_pool_size=50, timeout=30s)")
                 return True
             except Exception as e:
-                logger.error(f"Failed to connect to Neo4j: {e}")
+                logger.error(f"❌ Failed to connect to Neo4j: {e}")
+                logger.error(f"Connection details: URI={self.uri[:50]}..., User={self.user}, Database={self.database or 'default'}")
+                if "DNS" in str(e) or "resolve" in str(e).lower():
+                    logger.error("DNS resolution failed - check if Neo4j instance is active and URI is correct")
+                elif "authentication" in str(e).lower() or "unauthorized" in str(e).lower():
+                    logger.error("Authentication failed - check NEO4J_USER and NEO4J_PASSWORD")
+                elif "certificate" in str(e).lower() or "ssl" in str(e).lower():
+                    logger.error("SSL/TLS certificate error - try setting NEO4J_TRUST_ALL_CERTS=true")
                 self._is_connected = False
+                if self.driver:
+                    try:
+                        self.driver.close()
+                    except:
+                        pass
+                    self.driver = None
                 return False
         
         return self._is_connected

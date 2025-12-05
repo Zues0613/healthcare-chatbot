@@ -114,35 +114,52 @@ async def _startup() -> None:
         logger.warning("Database not connected - chat history will not be saved")
     
     # Initialize Neo4j connection pool (persistent, stays alive)
+    logger.info("Initializing Neo4j connection pool...")
+    neo4j_uri = os.getenv("NEO4J_URI")
+    if neo4j_uri:
+        logger.info(f"Neo4j URI configured: {neo4j_uri[:50]}..." if len(neo4j_uri) > 50 else f"Neo4j URI configured: {neo4j_uri}")
+    else:
+        logger.warning("NEO4J_URI environment variable is not set")
+    
     try:
         if neo4j_client.connect():
-            logger.info("Neo4j connection pool initialized successfully (persistent connection)")
+            logger.info("✅ Neo4j connection pool initialized successfully (persistent connection)")
+            logger.info(f"Neo4j database: {neo4j_client.database or 'default'}")
         else:
-            logger.warning("Neo4j not connected - graph queries will use fallback")
+            logger.warning("⚠️ Neo4j connection failed - graph queries will use fallback")
+            logger.warning("Check NEO4J_URI, NEO4J_USER, and NEO4J_PASSWORD environment variables")
     except Exception as e:
-        logger.error(f"Failed to initialize Neo4j: {e}", exc_info=True)
-        logger.warning("Neo4j not connected - graph queries will use fallback")
+        logger.error(f"❌ Failed to initialize Neo4j: {e}", exc_info=True)
+        logger.warning("⚠️ Neo4j not connected - graph queries will use fallback")
+        logger.warning("The application will continue to work with in-memory fallback for symptom relationships")
     
-    # Initialize cache service (Redis)
-    # Force re-initialization to ensure connection is established
+    # Initialize cache service (Redis) - non-blocking
     logger.info("Initializing Redis cache (L2)...")
     cache_service.ensure_redis_connection()
     
-    # Give it a moment to connect
-    import asyncio
-    await asyncio.sleep(0.1)
+    # Pre-warm database connection pool for faster cold start
+    logger.info("Pre-warming database connection pool...")
+    try:
+        if db_client.is_connected() and db_client.pool and not db_client.pool.is_closing():
+            # Acquire a connection immediately to warm up the pool
+            async with db_client.pool.acquire() as conn:
+                await conn.fetchval("SELECT 1")
+            logger.info("Database connection pool pre-warmed successfully")
+        else:
+            logger.debug("Database pool not ready for pre-warming yet")
+    except Exception as e:
+        logger.warning(f"Could not pre-warm database pool: {e}")
     
+    # Check Redis status (non-blocking)
     if cache_service.is_available():
         logger.info("Redis cache (L2) initialized successfully")
     else:
-        logger.warning("Redis cache (L2) not available - caching will use L1 and L3 only")
-        # Log more details about why Redis is not available
-        redis_uri = os.getenv("REDIS_URI")
+        logger.warning("Redis cache (L2) not available - using in-memory cache fallback")
+        redis_uri = os.getenv("REDIS_URI") or os.getenv("UPSTASH_REDIS_REST_URL")
         if not redis_uri:
-            logger.warning("REDIS_URI environment variable is not set")
-            logger.warning("Make sure REDIS_URI is set in your .env file")
+            logger.info("REDIS_URI not set - in-memory cache will be used (acceptable for development)")
         else:
-            logger.info(f"REDIS_URI is set: {redis_uri[:30]}...")
+            logger.info(f"REDIS_URI is set but connection failed - using in-memory cache fallback")
             logger.warning("Check Redis connection logs above for connection errors")
             # Try one more time with explicit initialization
             logger.info("Attempting explicit Redis re-initialization...")
@@ -218,6 +235,12 @@ class SimpleRateLimiter:
         if os.getenv("DISABLE_RATE_LIMIT") == "1" or self.limit <= 0:
             return await call_next(request)
 
+        # Skip rate limiting for critical endpoints that need to be fast
+        # /auth/check-ip is called on every page load and must be fast
+        # /auth/me is called frequently for auth checks
+        if request.url.path in ["/auth/check-ip", "/auth/me", "/auth/refresh"]:
+            return await call_next(request)
+
         identifier = request.client.host if request.client else "anonymous"
         now = time.time()
         bucket = self.requests[identifier]
@@ -244,6 +267,86 @@ rate_limiter = SimpleRateLimiter(
 
 if os.getenv("DISABLE_RATE_LIMIT") != "1":
     app.middleware("http")(rate_limiter)
+
+# IP Tracking Middleware - Track IPs on all requests (lightweight, async)
+@app.middleware("http")
+async def track_ip_middleware(request: Request, call_next):
+    """
+    Lightweight IP tracking middleware
+    Tracks IP addresses in background without blocking requests
+    """
+    from .database.db_client import db_client
+    from .services.cache import cache_service
+    
+    # Get client IP
+    client_ip = request.client.host if request.client else None
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        client_ip = forwarded_for.split(",")[0].strip()
+    
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip and not client_ip:
+        client_ip = real_ip.strip()
+    
+    # Process request first (don't block on IP tracking)
+    response = await call_next(request)
+    
+    # Track IP in background (non-blocking)
+    if client_ip and client_ip != "unknown":
+        try:
+            # Only track on successful requests (2xx, 3xx)
+            if 200 <= response.status_code < 400:
+                # Use background task to update IP tracking
+                # This doesn't block the response
+                cache_key = f"ip_check:{client_ip}"
+                # Quick cache check - if not cached, schedule DB update
+                if cache_service.is_available():
+                    try:
+                        cached = await cache_service.get(cache_key)
+                        if not cached:
+                            # IP not in cache, schedule background update
+                            import asyncio
+                            asyncio.create_task(_background_ip_update(client_ip))
+                    except:
+                        pass
+                else:
+                    # No cache, schedule background update
+                    import asyncio
+                    asyncio.create_task(_background_ip_update(client_ip))
+        except Exception as e:
+            # IP tracking failures should never block requests
+            logger.debug(f"IP tracking middleware error: {e}")
+    
+    return response
+
+
+async def _background_ip_update(client_ip: str):
+    """Background task to update IP tracking (non-blocking)"""
+    from .database.db_client import db_client
+    try:
+        # Quick check if IP exists
+        query = "SELECT id FROM ip_addresses WHERE ip_address = $1"
+        result = await db_client.fetchrow(query, client_ip)
+        
+        if result:
+            # Update last_seen and visit_count
+            update_query = """
+                UPDATE ip_addresses
+                SET last_seen = NOW(), visit_count = visit_count + 1
+                WHERE ip_address = $1
+            """
+            await db_client.execute(update_query, client_ip)
+        else:
+            # Create new IP record
+            insert_query = """
+                INSERT INTO ip_addresses (ip_address, first_seen, last_seen, visit_count)
+                VALUES ($1, NOW(), NOW(), 1)
+                ON CONFLICT (ip_address) DO UPDATE
+                SET last_seen = NOW(), visit_count = ip_addresses.visit_count + 1
+            """
+            await db_client.execute(insert_query, client_ip)
+    except Exception as e:
+        logger.debug(f"Background IP update failed: {e}")
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -1336,13 +1439,15 @@ def _check_symptom_relationships(processed_text: str, current_symptoms: List[str
         related_symptoms = graph_get_related_symptoms(all_symptoms_for_query) if all_symptoms_for_query else []
         logger.debug(f"Neo4j returned {len(related_symptoms) if related_symptoms else 0} related symptoms")
         
+        # Define lowercase versions for both if and else blocks
+        current_symptoms_lower = [s.lower() for s in current_symptoms]
+        history_symptoms_lower = [s.lower() for s in history_symptoms]
+        current_raw_lower = [p.lower() for p in current_raw_phrases]
+        history_raw_lower = [p.lower() for p in history_raw_phrases]
+        
         if related_symptoms:
             # Filter to only show relationships between current and history symptoms/phrases
             relevant_relationships = []
-            current_symptoms_lower = [s.lower() for s in current_symptoms]
-            history_symptoms_lower = [s.lower() for s in history_symptoms]
-            current_raw_lower = [p.lower() for p in current_raw_phrases]
-            history_raw_lower = [p.lower() for p in history_raw_phrases]
             
             # Create combined lists for matching
             all_current_lower = current_symptoms_lower + current_raw_lower
